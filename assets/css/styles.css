@@ -278,6 +278,10 @@ body {
   background: var(--panel);
 }
 
+.market-card:not(.rsi-only-card) {
+  grid-template-rows: 34px minmax(0, 1fr);
+}
+
 .card-head {
   display: flex;
   align-items: center;

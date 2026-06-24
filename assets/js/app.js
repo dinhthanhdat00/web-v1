@@ -824,9 +824,12 @@ class SingleFramePanel {
     this.symbolEl = document.querySelector('[data-role="single-symbol"]');
     this.priceEl = document.querySelector('[data-role="single-price"]');
     this.changeEl = document.querySelector('[data-role="single-change"]');
+    this.shellNode = document.querySelector(".single-shell");
     this.priceNode = document.querySelector('[data-role="single-price-chart"]');
     this.rsiNode = document.querySelector('[data-role="single-rsi-chart"]');
+    this.resizeHandle = document.querySelector('[data-role="single-rsi-resize"]');
     this.tfNode = $("singleTfButtons");
+    this.rsiRatio = this.savedRsiRatio();
 
     this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions("#10131b"));
     this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions("#10131b"));
@@ -858,6 +861,66 @@ class SingleFramePanel {
       if (range) this.rsiChart.timeScale().setVisibleLogicalRange(range);
     });
     this.renderTfButtons();
+    this.initResizeHandle();
+    requestAnimationFrame(() => this.resize());
+  }
+
+  savedRsiRatio() {
+    const saved = Number(localStorage.getItem("singleRsiRatio"));
+    return Number.isFinite(saved) ? Math.min(0.72, Math.max(0.18, saved)) : 0.30;
+  }
+
+  applyRsiRatio() {
+    if (!this.shellNode || !this.priceNode || !this.rsiNode || !this.resizeHandle) return;
+
+    const shellHeight = this.shellNode.clientHeight;
+    const headHeight = this.shellNode.querySelector(".single-head")?.offsetHeight || 38;
+    const handleHeight = this.resizeHandle.offsetHeight || 8;
+    const available = Math.max(220, shellHeight - headHeight - handleHeight);
+    const minRsi = Math.min(180, available * 0.42);
+    const maxRsi = Math.max(minRsi, available * 0.72);
+    const rsiHeight = Math.min(maxRsi, Math.max(minRsi, available * this.rsiRatio));
+    const priceHeight = Math.max(120, available - rsiHeight);
+
+    this.shellNode.style.gridTemplateRows = `${headHeight}px minmax(0, ${priceHeight}px) ${handleHeight}px minmax(0, ${rsiHeight}px)`;
+  }
+
+  initResizeHandle() {
+    if (!this.resizeHandle) return;
+
+    let startY = 0;
+    let startRatio = this.rsiRatio;
+    let available = 1;
+
+    const onMove = (event) => {
+      const pointerY = event.clientY ?? event.touches?.[0]?.clientY;
+      if (!Number.isFinite(pointerY)) return;
+      const deltaY = pointerY - startY;
+      this.rsiRatio = Math.min(0.72, Math.max(0.18, startRatio - deltaY / available));
+      localStorage.setItem("singleRsiRatio", String(this.rsiRatio));
+      this.applyRsiRatio();
+      this.resizeCharts();
+    };
+
+    const onUp = () => {
+      this.resizeHandle.classList.remove("dragging");
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+
+    this.resizeHandle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      startY = event.clientY;
+      startRatio = this.rsiRatio;
+      const headHeight = this.shellNode.querySelector(".single-head")?.offsetHeight || 38;
+      const handleHeight = this.resizeHandle.offsetHeight || 8;
+      available = Math.max(1, this.shellNode.clientHeight - headHeight - handleHeight);
+      this.resizeHandle.classList.add("dragging");
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    });
   }
 
   renderTfButtons() {
@@ -896,6 +959,11 @@ class SingleFramePanel {
   }
 
   resize() {
+    this.applyRsiRatio();
+    this.resizeCharts();
+  }
+
+  resizeCharts() {
     this.priceChart.applyOptions({
       width: this.priceNode.clientWidth,
       height: this.priceNode.clientHeight

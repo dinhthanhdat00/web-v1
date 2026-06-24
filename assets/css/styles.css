@@ -371,7 +371,7 @@ body {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 38px minmax(260px, 1fr) minmax(160px, 0.42fr);
+  grid-template-rows: 38px minmax(0, 1fr) 8px minmax(0, 0.42fr);
   background: #10131b;
 }
 
@@ -457,8 +457,36 @@ body {
 }
 
 .single-rsi-chart {
-  border-top: 1px solid #2a3040;
   background: #10131b;
+}
+
+.single-rsi-resize {
+  position: relative;
+  z-index: 3;
+  height: 8px;
+  min-height: 8px;
+  border-top: 1px solid #2a3040;
+  border-bottom: 1px solid #202533;
+  background: #111620;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.single-rsi-resize::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(154, 160, 173, 0.55);
+  transform: translate(-50%, -50%);
+}
+
+.single-rsi-resize:hover::after,
+.single-rsi-resize.dragging::after {
+  background: rgba(47, 92, 255, 0.95);
 }
 
 @media (max-width: 980px) {
@@ -497,7 +525,7 @@ body {
   }
 
   .single-shell {
-    grid-template-rows: auto minmax(360px, 1fr) minmax(190px, 0.46fr);
+    grid-template-rows: auto minmax(0, 1fr) 12px minmax(0, 0.46fr);
   }
 
   .single-head {
@@ -514,6 +542,11 @@ body {
 
   .single-tf-tabs {
     width: 100%;
+  }
+
+  .single-rsi-resize {
+    height: 12px;
+    min-height: 12px;
   }
 
   body.rsi-view-active {

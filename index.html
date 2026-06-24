@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260624-single-rsi-resize" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260624-horizontal-controls" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -43,52 +43,16 @@
     </header>
 
     <section id="controlsPanel" class="controls-panel">
-      <table class="controls-table">
-        <thead>
-          <tr>
-            <th>Layer</th>
-            <th>Show</th>
-            <th>Color</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Baseline</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="baseline" checked /></td>
-            <td><span class="swatch yellow"></span></td>
-          </tr>
-          <tr>
-            <td>Slow Baseline</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="slowBaseline" checked /></td>
-            <td><span class="swatch purple"></span></td>
-          </tr>
-          <tr>
-            <td>VWAP W</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="vwap" checked /></td>
-            <td><span class="swatch white"></span></td>
-          </tr>
-          <tr>
-            <td>RSI14</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="rsi" checked /></td>
-            <td><span class="swatch white"></span></td>
-          </tr>
-          <tr>
-            <td>RSI EMA9</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="rsiEma" checked /></td>
-            <td><span class="swatch orange"></span></td>
-          </tr>
-          <tr>
-            <td>RSI WMA45</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="rsiWma" checked /></td>
-            <td><span class="swatch red"></span></td>
-          </tr>
-          <tr>
-            <td>Signal Labels</td>
-            <td><input class="layer-toggle" type="checkbox" data-layer="signals" checked /></td>
-            <td><span class="swatch green"></span></td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="controls-strip">
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="baseline" checked /><span class="swatch yellow"></span><span>BL</span><input class="param-input" type="number" data-param="baselineLength" min="1" max="500" step="1" /><small>L</small><input class="param-input" type="number" data-param="baselinePhase" min="-100" max="100" step="1" /><small>P</small></label>
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="slowBaseline" checked /><span class="swatch purple"></span><span>Slow BL</span><input class="param-input" type="number" data-param="slowBaselineLength" min="1" max="800" step="1" /><small>L</small><input class="param-input" type="number" data-param="slowBaselinePhase" min="-100" max="100" step="1" /><small>P</small></label>
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="vwap" checked /><span class="swatch white"></span><span>VWAP W</span></label>
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="rsi" checked /><span class="swatch white"></span><span>RSI</span><input class="param-input" type="number" data-param="rsiLength" min="2" max="100" step="1" /></label>
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="rsiEma" checked /><span class="swatch orange"></span><span>EMA</span><input class="param-input" type="number" data-param="rsiEmaLength" min="1" max="100" step="1" /></label>
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="rsiWma" checked /><span class="swatch red"></span><span>WMA</span><input class="param-input" type="number" data-param="rsiWmaLength" min="1" max="200" step="1" /></label>
+        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="signals" checked /><span class="swatch green"></span><span>Signals</span></label>
+        <button id="resetParams" class="control-reset" type="button">Reset</button>
+      </div>
     </section>
 
     <div class="content-shell">
@@ -218,6 +182,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260624-single-rsi-resize"></script>
+  <script src="assets/js/app.js?v=20260624-horizontal-controls"></script>
 </body>
 </html>

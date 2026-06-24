@@ -141,34 +141,79 @@ body {
 
 .controls-panel {
   display: none;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--border);
   background: #0a0a0a;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .controls-panel.open {
   display: block;
 }
 
-.controls-table {
-  width: auto;
-  border-collapse: collapse;
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 800;
+.controls-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  min-width: 100%;
 }
 
-.controls-table th,
-.controls-table td {
-  padding: 5px 10px;
-  border: 1px solid #242424;
-  text-align: left;
+.control-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 7px;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  background: #080808;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
   white-space: nowrap;
 }
 
-.controls-table th {
+.control-chip small {
   color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.param-input {
+  width: 44px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid #343434;
+  border-radius: 3px;
   background: #101010;
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+  outline: none;
+}
+
+.param-input:focus {
+  border-color: var(--blue);
+}
+
+.control-reset {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #343434;
+  border-radius: 4px;
+  background: #101010;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.control-reset:hover {
+  color: var(--white);
+  border-color: var(--blue);
 }
 
 .layer-toggle {

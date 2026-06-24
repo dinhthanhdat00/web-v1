@@ -2,9 +2,6 @@ const API = "https://api.binance.com";
 const WS_BASE = "wss://stream.binance.com:9443/ws";
 const TIMEZONE_OFFSET_SECONDS = 7 * 60 * 60;
 const VISIBLE_BARS = 40;
-const RSI_LENGTH = 14;
-const RSI_EMA_LENGTH = 9;
-const RSI_WMA_LENGTH = 45;
 const RSI_LOW_LEVEL = 20;
 const RSI_HIGH_LEVEL = 80;
 const RSI_LOW_COLOR = "#8b0000";
@@ -41,6 +38,16 @@ let singlePanel = null;
 const panels = new Map();
 const rsiOnlyPanels = new Map();
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const DEFAULT_PARAMS = {
+  baselineLength: 70,
+  baselinePhase: 5,
+  slowBaselineLength: 150,
+  slowBaselinePhase: 0,
+  rsiLength: 14,
+  rsiEmaLength: 9,
+  rsiWmaLength: 45
+};
+const params = { ...DEFAULT_PARAMS };
 const layerState = {
   baseline: true,
   slowBaseline: true,
@@ -539,6 +546,58 @@ function closeSocket(ws) {
   try { ws.close(); } catch (err) {}
 }
 
+function loadParams() {
+  const saved = JSON.parse(localStorage.getItem("indicatorParams") || "{}");
+  Object.entries(DEFAULT_PARAMS).forEach(([key, defaultValue]) => {
+    const value = Number(saved[key]);
+    params[key] = Number.isFinite(value) ? value : defaultValue;
+  });
+}
+
+function saveParams() {
+  localStorage.setItem("indicatorParams", JSON.stringify(params));
+}
+
+function syncParamInputs() {
+  document.querySelectorAll(".param-input").forEach((input) => {
+    input.value = params[input.dataset.param] ?? "";
+  });
+}
+
+function resetParams() {
+  Object.assign(params, DEFAULT_PARAMS);
+  saveParams();
+  syncParamInputs();
+  redrawAll();
+}
+
+function bindControls() {
+  document.querySelectorAll(".layer-toggle").forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      layerState[checkbox.dataset.layer] = checkbox.checked;
+      redrawAll();
+    });
+  });
+
+  document.querySelectorAll(".param-input").forEach((input) => {
+    input.addEventListener("change", () => {
+      const key = input.dataset.param;
+      const min = Number(input.min);
+      const max = Number(input.max);
+      let value = Number(input.value);
+      if (!Number.isFinite(value)) value = DEFAULT_PARAMS[key];
+      if (Number.isFinite(min)) value = Math.max(min, value);
+      if (Number.isFinite(max)) value = Math.min(max, value);
+      params[key] = Math.round(value);
+      input.value = params[key];
+      saveParams();
+      redrawAll();
+    });
+  });
+
+  $("resetParams").addEventListener("click", resetParams);
+}
+
 function setLiveStatus(isOnline, text) {
   $("liveDot").classList.toggle("online", isOnline);
   $("liveStatus").textContent = text;
@@ -654,8 +713,8 @@ class MarketPanel {
     const candles = this.candles;
     if (!candles.length) return;
 
-    const baseline = jmaFromClose(candles, 70, 2, 5);
-    const slowBaseline = jmaFromClose(candles, 150, 2, 0);
+    const baseline = jmaFromClose(candles, params.baselineLength, 2, params.baselinePhase);
+    const slowBaseline = jmaFromClose(candles, params.slowBaselineLength, 2, params.slowBaselinePhase);
     const vwapData = anchoredVwap(candles, "W");
     const barColors = crossSignals(candles, baseline, slowBaseline);
 
@@ -677,9 +736,9 @@ class MarketPanel {
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
 
-    const rsiData = rsi(candles, RSI_LENGTH);
-    const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
-    const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    const rsiData = rsi(candles, params.rsiLength);
+    const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
+    const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
 
     const last = candles[candles.length - 1];
@@ -1014,13 +1073,13 @@ class SingleFramePanel {
     const candles = this.candles;
     if (!candles.length) return;
 
-    const baseline = jmaFromClose(candles, 70, 2, 5);
-    const slowBaseline = jmaFromClose(candles, 150, 2, 0);
+    const baseline = jmaFromClose(candles, params.baselineLength, 2, params.baselinePhase);
+    const slowBaseline = jmaFromClose(candles, params.slowBaselineLength, 2, params.slowBaselinePhase);
     const vwapData = anchoredVwap(candles, "W");
     const barColors = crossSignals(candles, baseline, slowBaseline);
-    const rsiData = rsi(candles, RSI_LENGTH);
-    const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
-    const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    const rsiData = rsi(candles, params.rsiLength);
+    const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
+    const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
 
     this.candleSeries.setData(candles.map((candle) => {
@@ -1251,6 +1310,7 @@ function startClock() {
 
 function boot() {
   cleanStartupUrl();
+  loadParams();
   currentSymbol = initialSymbol();
   updateSymbolTitle();
   applyInitialTimeframeFocus();
@@ -1277,12 +1337,8 @@ function boot() {
     requestAnimationFrame(resizeAll);
   });
 
-  document.querySelectorAll(".layer-toggle").forEach((checkbox) => {
-    checkbox.addEventListener("change", () => {
-      layerState[checkbox.dataset.layer] = checkbox.checked;
-      redrawAll();
-    });
-  });
+  syncParamInputs();
+  bindControls();
 
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1301,3 +1357,4 @@ function boot() {
 }
 
 boot();
+

@@ -558,13 +558,9 @@ class MarketPanel {
     this.candles = [];
     this.ws = null;
     this.closeEl = this.el.querySelector('[data-role="close"]');
-    this.rsiEl = this.el.querySelector('[data-role="rsi"]');
     this.priceNode = this.el.querySelector('[data-role="price-chart"]');
-    this.rsiNode = this.el.querySelector('[data-role="rsi-chart"]');
 
     this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions("#0d0d0d"));
-    this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions("#090909"));
-    applyRsiChartScale(this.rsiChart);
 
     this.candleSeries = this.priceChart.addCandlestickSeries({
       upColor: "#4caf50",
@@ -597,45 +593,12 @@ class MarketPanel {
       lastValueVisible: false,
       priceLineVisible: false
     });
-    this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: "#f2f2f2",
-      lineWidth: 2
-    }));
-    this.rsiLowSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: RSI_LOW_COLOR,
-      lineWidth: 3
-    }));
-    this.rsiHighSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: RSI_HIGH_COLOR,
-      lineWidth: 4
-    }));
-    this.rsiEmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: "#ff9800",
-      lineWidth: 2
-    }));
-    this.rsiWmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: "#ff3045",
-      lineWidth: 2
-    }));
-    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,77,90,0.65)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,43,214,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,255,255,0.24)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(139,0,0,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.65)", lineWidth: 1, lineStyle: 2 }));
-
-    this.priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (range) this.rsiChart.timeScale().setVisibleLogicalRange(range);
-    });
   }
 
   resize() {
     this.priceChart.applyOptions({
       width: this.priceNode.clientWidth,
       height: this.priceNode.clientHeight
-    });
-    this.rsiChart.applyOptions({
-      width: this.rsiNode.clientWidth,
-      height: this.rsiNode.clientHeight
     });
   }
 
@@ -654,13 +617,11 @@ class MarketPanel {
     const from = Math.max(total - bars, 0);
     const to = total + 1;
     this.priceChart.timeScale().setVisibleLogicalRange({ from, to });
-    this.rsiChart.timeScale().setVisibleLogicalRange({ from, to });
   }
 
   async load(session) {
     closeSocket(this.ws);
     this.closeEl.textContent = "--";
-    updateRsiValue(this.rsiEl, null);
 
     const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
@@ -705,22 +666,9 @@ class MarketPanel {
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
     const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
-    this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
-    this.rsiLowSeries.setData([]);
-    this.rsiHighSeries.setData([]);
-    this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
-    this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers(layerState.signals ? signalMarkers : []);
-    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
-    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
-    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
-    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
-    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
 
     const last = candles[candles.length - 1];
-    const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
     this.closeEl.textContent = fmt.format(last.close);
-    updateRsiValue(this.rsiEl, lastRsi);
     rsiOnlyPanels.get(this.config.key)?.draw(candles, rsiData, rsiEmaData, rsiWmaData, signalMarkers, fit);
 
     if (this.config.key === "h4") updateOhlc(last);
@@ -996,7 +944,7 @@ function boot() {
   });
 
   const resizeObserver = new ResizeObserver(resizeAll);
-  document.querySelectorAll(".price-chart, .rsi-chart, .rsi-only-chart").forEach((node) => resizeObserver.observe(node));
+  document.querySelectorAll(".price-chart, .rsi-only-chart").forEach((node) => resizeObserver.observe(node));
   window.addEventListener("resize", resizeAll);
 
   $("symbolForm").addEventListener("submit", (event) => {

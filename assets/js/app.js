@@ -20,9 +20,24 @@ const FRAMES = [
   { key: "d2", label: "2D", apiTf: "1d", wsTf: "1d", aggregate: 2, limit: 720 }
 ];
 
+const SINGLE_FRAMES = [
+  { key: "h1", label: "1H", apiTf: "1h", wsTf: "1h", aggregate: 1, limit: 600 },
+  { key: "h2", label: "2H", apiTf: "2h", wsTf: "2h", aggregate: 1, limit: 600 },
+  { key: "h4", label: "4H", apiTf: "4h", wsTf: "4h", aggregate: 1, limit: 600 },
+  { key: "h12", label: "12H", apiTf: "12h", wsTf: "12h", aggregate: 1, limit: 600 },
+  { key: "d1", label: "1D", apiTf: "1d", wsTf: "1d", aggregate: 1, limit: 600 },
+  { key: "d2", label: "2D", apiTf: "1d", wsTf: "1d", aggregate: 2, limit: 900 },
+  { key: "d3", label: "3D", apiTf: "3d", wsTf: "3d", aggregate: 1, limit: 600 },
+  { key: "w1", label: "W", apiTf: "1w", wsTf: "1w", aggregate: 1, limit: 600 },
+  { key: "w2", label: "2W", apiTf: "1w", wsTf: "1w", aggregate: 2, limit: 900 },
+  { key: "m1", label: "M", apiTf: "1M", wsTf: "1M", aggregate: 1, limit: 600 }
+];
+
 let currentSymbol = "BTCUSDT";
 let sessionId = 0;
+let singleSessionId = 0;
 let tickerWs = null;
+let singlePanel = null;
 const panels = new Map();
 const rsiOnlyPanels = new Map();
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -800,6 +815,233 @@ class RsiOnlyPanel {
   }
 }
 
+class SingleFramePanel {
+  constructor() {
+    this.config = SINGLE_FRAMES.find((frame) => frame.key === (localStorage.getItem("singleFrameTf") || "h12")) || SINGLE_FRAMES[3];
+    this.rawCandles = [];
+    this.candles = [];
+    this.ws = null;
+    this.symbolEl = document.querySelector('[data-role="single-symbol"]');
+    this.priceEl = document.querySelector('[data-role="single-price"]');
+    this.changeEl = document.querySelector('[data-role="single-change"]');
+    this.priceNode = document.querySelector('[data-role="single-price-chart"]');
+    this.rsiNode = document.querySelector('[data-role="single-rsi-chart"]');
+    this.tfNode = $("singleTfButtons");
+
+    this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions("#10131b"));
+    this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions("#10131b"));
+    applyRsiChartScale(this.rsiChart);
+
+    this.candleSeries = this.priceChart.addCandlestickSeries({
+      upColor: "#4caf50",
+      downColor: "#d7d7d7",
+      borderUpColor: "#4caf50",
+      borderDownColor: "#d7d7d7",
+      wickUpColor: "#4caf50",
+      wickDownColor: "#d7d7d7",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.baselineSeries = this.priceChart.addLineSeries({ color: "#ffff00", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
+    this.slowBaselineSeries = this.priceChart.addLineSeries({ color: "#9c27b0", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
+    this.vwapSeries = this.priceChart.addLineSeries({ color: "#f2f2f2", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
+    this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#f2f2f2", lineWidth: 2 }));
+    this.rsiEmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#ff9800", lineWidth: 2 }));
+    this.rsiWmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#ff3045", lineWidth: 2 }));
+    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.65)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.42)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,255,255,0.24)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,77,90,0.42)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,77,90,0.65)", lineWidth: 1, lineStyle: 2 }));
+
+    this.priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (range) this.rsiChart.timeScale().setVisibleLogicalRange(range);
+    });
+    this.renderTfButtons();
+  }
+
+  renderTfButtons() {
+    this.tfNode.innerHTML = "";
+    SINGLE_FRAMES.forEach((frame) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "single-tf-btn";
+      button.dataset.tf = frame.key;
+      button.textContent = frame.label;
+      button.addEventListener("click", () => {
+        if (this.config.key === frame.key) return;
+        this.setConfig(frame.key);
+      });
+      this.tfNode.appendChild(button);
+    });
+    this.updateTfButtons();
+  }
+
+  updateTfButtons() {
+    this.tfNode.querySelectorAll(".single-tf-btn").forEach((button) => {
+      button.classList.toggle("active", button.dataset.tf === this.config.key);
+    });
+  }
+
+  setConfig(key) {
+    const nextConfig = SINGLE_FRAMES.find((frame) => frame.key === key);
+    if (!nextConfig) return;
+    this.config = nextConfig;
+    localStorage.setItem("singleFrameTf", key);
+    this.updateTfButtons();
+    this.load(++singleSessionId).catch((err) => {
+      console.error(err);
+      setLiveStatus(false, "Cannot load single chart");
+    });
+  }
+
+  resize() {
+    this.priceChart.applyOptions({
+      width: this.priceNode.clientWidth,
+      height: this.priceNode.clientHeight
+    });
+    this.rsiChart.applyOptions({
+      width: this.rsiNode.clientWidth,
+      height: this.rsiNode.clientHeight
+    });
+  }
+
+  klineUrl() {
+    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
+  }
+
+  refreshCandles() {
+    this.candles = aggregateCandles(this.rawCandles, this.config.aggregate);
+  }
+
+  focusLatest(bars = 140) {
+    const total = this.candles.length;
+    if (!total) return;
+
+    const from = Math.max(total - bars, 0);
+    const to = total + 4;
+    this.priceChart.timeScale().setVisibleLogicalRange({ from, to });
+    this.rsiChart.timeScale().setVisibleLogicalRange({ from, to });
+  }
+
+  async load(session) {
+    closeSocket(this.ws);
+    this.priceEl.textContent = "--";
+    this.changeEl.textContent = "--%";
+    this.changeEl.className = "";
+
+    const response = await fetch(this.klineUrl());
+    if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
+
+    const raw = await response.json();
+    if (session !== singleSessionId) return;
+
+    this.rawCandles = raw.map(toChartCandle);
+    this.refreshCandles();
+    this.draw(true);
+    this.startWebSocket(session);
+  }
+
+  draw(fit = false) {
+    const candles = this.candles;
+    if (!candles.length) return;
+
+    const baseline = jmaFromClose(candles, 70, 2, 5);
+    const slowBaseline = jmaFromClose(candles, 150, 2, 0);
+    const vwapData = anchoredVwap(candles, "W");
+    const barColors = crossSignals(candles, baseline, slowBaseline);
+    const rsiData = rsi(candles, RSI_LENGTH);
+    const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
+    const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
+
+    this.candleSeries.setData(candles.map((candle) => {
+      const signalColor = barColors.get(candle.time);
+      const bodyColor = signalColor || (candle.close >= candle.open ? "#4caf50" : "#d7d7d7");
+      return {
+        time: candle.time,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        color: bodyColor,
+        borderColor: bodyColor,
+        wickColor: bodyColor
+      };
+    }));
+    this.baselineSeries.setData(layerState.baseline ? baseline : []);
+    this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
+    this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+    this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
+    this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
+    this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
+    this.rsiSeries.setMarkers(layerState.signals ? signalMarkers : []);
+    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
+    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
+    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
+    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
+    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
+
+    const base = currentSymbol.replace("USDT", "");
+    const last = candles[candles.length - 1];
+    const change = last.close - last.open;
+    const pct = last.open ? (change / last.open) * 100 : 0;
+    this.symbolEl.textContent = `${base}/USDT`;
+    this.priceEl.textContent = `$${fmt.format(last.close)}`;
+    this.changeEl.textContent = `${change >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+    this.changeEl.className = change >= 0 ? "up" : "down";
+
+    if (fit) this.focusLatest();
+  }
+
+  startWebSocket(session) {
+    const stream = `${currentSymbol.toLowerCase()}@kline_${this.config.wsTf}`;
+    this.ws = new WebSocket(`${WS_BASE}/${stream}`);
+
+    this.ws.onopen = () => {
+      if (session === singleSessionId) setLiveStatus(true, `Live ${currentSymbol}`);
+    };
+
+    this.ws.onclose = () => {
+      if (session !== singleSessionId) return;
+      setTimeout(() => {
+        if (session === singleSessionId) this.startWebSocket(session);
+      }, 1500);
+    };
+
+    this.ws.onerror = () => {
+      if (session !== singleSessionId) return;
+      try { this.ws.close(); } catch (err) {}
+    };
+
+    this.ws.onmessage = (event) => {
+      if (session !== singleSessionId) return;
+
+      const msg = JSON.parse(event.data);
+      const k = msg.k;
+      const candle = {
+        time: Math.floor(k.t / 1000),
+        open: Number(k.o),
+        high: Number(k.h),
+        low: Number(k.l),
+        close: Number(k.c),
+        volume: Number(k.v)
+      };
+      const last = this.rawCandles[this.rawCandles.length - 1];
+
+      if (last && last.time === candle.time) {
+        this.rawCandles[this.rawCandles.length - 1] = candle;
+      } else {
+        this.rawCandles.push(candle);
+        while (this.rawCandles.length > this.config.limit) this.rawCandles.shift();
+      }
+
+      this.refreshCandles();
+      this.draw(false);
+    };
+  }
+}
+
 function normalizeSymbol(value) {
   const cleaned = value.trim().toUpperCase().replace("/", "");
   if (!cleaned) return currentSymbol;
@@ -836,13 +1078,17 @@ async function loadMarketMatrix() {
   const session = ++sessionId;
   closeSocket(tickerWs);
   panels.forEach((panel) => closeSocket(panel.ws));
+  if (singlePanel) closeSocket(singlePanel.ws);
 
   updateSymbolTitle();
   updateOhlc(null);
   setLiveStatus(false, "Loading matrix...");
 
   try {
-    await Promise.all(Array.from(panels.values()).map((panel) => panel.load(session)));
+    await Promise.all([
+      ...Array.from(panels.values()).map((panel) => panel.load(session)),
+      singlePanel?.load(++singleSessionId)
+    ]);
     if (session !== sessionId) return;
     startTickerWebSocket(session);
     setLiveStatus(true, `Live ${currentSymbol}`);
@@ -905,15 +1151,18 @@ function applyInitialTimeframeFocus() {
 function resizeAll() {
   panels.forEach((panel) => panel.resize());
   rsiOnlyPanels.forEach((panel) => panel.resize());
+  singlePanel?.resize();
 }
 
 function redrawAll() {
   panels.forEach((panel) => panel.draw(false));
+  singlePanel?.draw(false);
 }
 
 function setActiveView(view, persist = true) {
-  const nextView = view === "rsi" ? "rsi" : "chart";
+  const nextView = ["chart", "single", "rsi"].includes(view) ? view : "chart";
   document.body.classList.toggle("rsi-view-active", nextView === "rsi");
+  document.body.classList.toggle("single-view-active", nextView === "single");
   document.querySelectorAll(".view-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === nextView));
   document.querySelectorAll(".view-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${nextView}View`));
   if (persist) localStorage.setItem("marketMatrixView", nextView);
@@ -942,9 +1191,10 @@ function boot() {
     rsiOnlyPanels.set(config.key, new RsiOnlyPanel(config));
     panels.set(config.key, new MarketPanel(config));
   });
+  singlePanel = new SingleFramePanel();
 
   const resizeObserver = new ResizeObserver(resizeAll);
-  document.querySelectorAll(".price-chart, .rsi-only-chart").forEach((node) => resizeObserver.observe(node));
+  document.querySelectorAll(".price-chart, .rsi-only-chart, .single-price-chart, .single-rsi-chart").forEach((node) => resizeObserver.observe(node));
   window.addEventListener("resize", resizeAll);
 
   $("symbolForm").addEventListener("submit", (event) => {

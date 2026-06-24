@@ -27,6 +27,7 @@
       <button id="toggleControls" class="reload-btn" type="button">Controls</button>
       <nav class="view-tabs" aria-label="Chart view">
         <button class="view-tab active" type="button" data-view="chart">Chart</button>
+        <button class="view-tab" type="button" data-view="single">Single</button>
         <button class="view-tab" type="button" data-view="rsi">RSI Only</button>
       </nav>
 
@@ -198,9 +199,24 @@
           <div class="rsi-only-chart" data-role="rsi-only-chart"></div>
         </section>
       </main>
+
+      <main id="singleView" class="single-view view-panel">
+        <section class="single-shell">
+          <header class="single-head">
+            <div class="single-title">
+              <strong data-role="single-symbol">BTC/USDT</strong>
+              <span data-role="single-price">--</span>
+              <span data-role="single-change">--%</span>
+            </div>
+            <nav id="singleTfButtons" class="single-tf-tabs" aria-label="Single timeframe"></nav>
+          </header>
+          <div class="single-price-chart" data-role="single-price-chart"></div>
+          <div class="single-rsi-chart" data-role="single-rsi-chart"></div>
+        </section>
+      </main>
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260624-fill-chart"></script>
+  <script src="assets/js/app.js?v=20260624-single-view"></script>
 </body>
 </html>

@@ -913,6 +913,16 @@ function queryParams() {
   return new URLSearchParams(window.location.search);
 }
 
+function cleanStartupUrl() {
+  const params = queryParams();
+  if (!params.has("tf")) return;
+
+  params.delete("tf");
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+}
+
 function initialSymbol() {
   const params = queryParams();
   return normalizeSymbol(params.get("sym") || params.get("symbol") || currentSymbol);
@@ -975,6 +985,7 @@ function startClock() {
 }
 
 function boot() {
+  cleanStartupUrl();
   currentSymbol = initialSymbol();
   updateSymbolTitle();
   applyInitialTimeframeFocus();

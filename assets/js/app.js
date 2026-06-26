@@ -1520,6 +1520,88 @@ function findRsiRule(parentState, childState) {
   return { index, parent, child, score, action };
 }
 
+function strategyFromRule(rule) {
+  const action = rule.action;
+  const isLong = action.includes("Long") || action.includes("Buy");
+  const isShort = action.includes("Short") || action.includes("Sell");
+  const isWait = action.includes("Quan sát") || action.includes("Chờ") || action.includes("tránh") || action.includes("hạn chế");
+  const isManage = action.includes("Gồng") || action.includes("Giữ") || action.includes("Quản lý") || action.includes("chốt");
+  const isEntry = action.includes("Vào") || action.includes("Canh") || action.includes("thuận") || action.includes("theo");
+
+  if (isWait) {
+    return {
+      tone: "wait",
+      label: "WAIT",
+      title: "Chưa có điểm vào sạch",
+      reason: "Rule đang ưu tiên quan sát hoặc chờ khung con hoàn tất nhịp điều chỉnh.",
+      checks: ["Không vào đuổi.", "Đợi H4 có signal 2/3 rõ hơn.", "Chỉ xử lý khi giá về vùng có quản trị rủi ro tốt."]
+    };
+  }
+
+  if (isLong && isEntry && !isManage) {
+    return {
+      tone: "buy",
+      label: "BUY / LONG",
+      title: rule.score >= 80 ? "Ưu tiên canh Long" : "Long có điều kiện",
+      reason: "Khung bố và khung con đang ủng hộ hướng lên theo bảng RSI.",
+      checks: ["Ưu tiên vào khi H4 có buy 2/3 hoặc vừa pullback xong.", "Stop dưới đáy gần nhất của H4.", "Score càng gần 100 thì được phép tự tin hơn."]
+    };
+  }
+
+  if (isShort && isEntry && !isManage) {
+    return {
+      tone: "sell",
+      label: "SELL / SHORT",
+      title: rule.score >= 80 ? "Ưu tiên canh Short" : "Short có điều kiện",
+      reason: "Khung bố và khung con đang ủng hộ hướng xuống theo bảng RSI.",
+      checks: ["Ưu tiên vào khi H4 có sell 2/3 hoặc hồi lên xong.", "Stop trên đỉnh gần nhất của H4.", "Score càng gần 100 thì tín hiệu càng thuận."]
+    };
+  }
+
+  if (isLong) {
+    return {
+      tone: "hold-buy",
+      label: "HOLD LONG",
+      title: "Quản lý lệnh Long",
+      reason: "Rule còn nghiêng về Long nhưng không phải điểm mua mới đẹp.",
+      checks: ["Không mua đuổi nếu H4 đã đi xa.", "Dời stop hoặc chốt bớt khi RSI H4 cuộn lại.", "Chờ nhịp hồi mới nếu muốn bồi."]
+    };
+  }
+
+  if (isShort) {
+    return {
+      tone: "hold-sell",
+      label: "HOLD SHORT",
+      title: "Quản lý lệnh Short",
+      reason: "Rule còn nghiêng về Short nhưng không phải điểm bán mới đẹp.",
+      checks: ["Không sell đuổi nếu H4 đã rơi xa.", "Dời stop hoặc chốt bớt khi RSI H4 cạn lực.", "Chờ nhịp hồi mới nếu muốn bồi."]
+    };
+  }
+
+  return {
+    tone: "wait",
+    label: "WAIT",
+    title: "Chờ xác nhận",
+    reason: "Rule hiện tại chưa đủ rõ để ưu tiên Buy hoặc Sell.",
+    checks: ["Đợi H4 có signal 2/3.", "Không vào khi RSI đang nhiễu quanh EMA/WMA.", "Giữ risk nhỏ nếu bắt buộc phải đánh."]
+  };
+}
+
+function updateStrategyPanel(strategy) {
+  const panel = $("strategyPanel");
+  const labelEl = document.querySelector('[data-role="strategy-label"]');
+  const titleEl = document.querySelector('[data-role="strategy-title"]');
+  const reasonEl = document.querySelector('[data-role="strategy-reason"]');
+  const checksEl = document.querySelector('[data-role="strategy-checks"]');
+  if (!panel || !labelEl || !titleEl || !reasonEl || !checksEl) return;
+
+  panel.className = `strategy-panel ${strategy.tone}`;
+  labelEl.textContent = strategy.label;
+  titleEl.textContent = strategy.title;
+  reasonEl.textContent = strategy.reason;
+  checksEl.innerHTML = strategy.checks.map((item) => `<span>${item}</span>`).join("");
+}
+
 function updateCurrentRule() {
   const parent = rsiFrameStates.get("h12");
   const child = rsiFrameStates.get("h4");
@@ -1540,6 +1622,13 @@ function updateCurrentRule() {
     scoreEl.textContent = "Điểm --";
     scoreEl.className = "";
     actionEl.textContent = "Chờ đủ dữ liệu RSI H12 và H4.";
+    updateStrategyPanel({
+      tone: "wait",
+      label: "WAIT",
+      title: "Chờ đủ dữ liệu",
+      reason: "App sẽ dùng H12 làm khung bố và H4 làm khung con để lọc tín hiệu.",
+      checks: ["Đợi H12 và H4 tải xong.", "Sau đó xem Strategy để biết Buy/Sell/Hold/Wait.", "Không dùng tín hiệu khi dữ liệu chưa đủ."]
+    });
     return;
   }
 
@@ -1550,6 +1639,7 @@ function updateCurrentRule() {
   scoreEl.textContent = `Điểm ${rule.score}`;
   scoreEl.className = `score-tag score-${rule.score >= 85 ? "high" : rule.score >= 70 ? "mid" : "low"}`;
   actionEl.textContent = rule.action;
+  updateStrategyPanel(strategyFromRule(rule));
 
   const activeRow = document.querySelector(`#rsiRuleRows tr[data-parent-state="${rule.parent}"][data-child-state="${rule.child}"]`);
   activeRow?.classList.add("active-rule");

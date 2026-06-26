@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-current-rule" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-strategy" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -209,6 +209,18 @@
             </div>
           </section>
 
+          <section class="strategy-panel" id="strategyPanel">
+            <div class="strategy-signal">
+              <span>Strategy</span>
+              <b data-role="strategy-label">WAIT</b>
+            </div>
+            <div class="strategy-detail">
+              <strong data-role="strategy-title">Chờ đủ dữ liệu</strong>
+              <span data-role="strategy-reason">App sẽ dùng H12 làm khung bố và H4 làm khung con để lọc tín hiệu.</span>
+            </div>
+            <div class="strategy-checks" data-role="strategy-checks"></div>
+          </section>
+
           <div class="rsi-state-grid" id="rsiStateGrid"></div>
 
           <div class="rules-table-wrap">
@@ -230,6 +242,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260627-rsi-signal-state"></script>
+  <script src="assets/js/app.js?v=20260627-rsi-strategy"></script>
 </body>
 </html>

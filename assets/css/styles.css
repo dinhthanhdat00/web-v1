@@ -549,7 +549,7 @@ body {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   background: #10131b;
   color: var(--white);
 }
@@ -636,6 +636,94 @@ body {
   color: #07110a;
   font-size: 12px;
   font-weight: 900;
+}
+
+.strategy-panel {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.55fr) minmax(260px, 1.15fr) minmax(320px, 2fr);
+  gap: 1px;
+  padding: 1px;
+  border-bottom: 1px solid #242938;
+  background: #242938;
+}
+
+.strategy-signal,
+.strategy-detail,
+.strategy-checks {
+  min-width: 0;
+  padding: 10px;
+  background: #10151f;
+}
+
+.strategy-signal span,
+.strategy-detail span {
+  display: block;
+  color: #9aa0ad;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.strategy-signal b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  height: 28px;
+  margin-top: 5px;
+  border-radius: 4px;
+  background: #ffd54f;
+  color: #07110a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.strategy-detail strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #f6f8ff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.strategy-detail span {
+  color: #a8afbf;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.strategy-checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.strategy-checks span {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #2a3040;
+  border-radius: 4px;
+  color: #d8deea;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.strategy-panel.buy .strategy-signal b {
+  background: #4caf50;
+}
+
+.strategy-panel.sell .strategy-signal b {
+  background: #ff6b6b;
+}
+
+.strategy-panel.hold-buy .strategy-signal b,
+.strategy-panel.hold-sell .strategy-signal b {
+  background: #42a5f5;
+}
+
+.strategy-panel.wait .strategy-signal b {
+  background: #ffd54f;
 }
 
 .rsi-state-grid {
@@ -823,6 +911,14 @@ body {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .strategy-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .strategy-checks {
+    grid-template-columns: 1fr;
   }
 
   .rules-head {

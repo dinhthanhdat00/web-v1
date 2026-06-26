@@ -643,8 +643,11 @@ class MarketPanel {
       borderDownColor: "#b8b8b8",
       wickUpColor: "#4caf50",
       wickDownColor: "#b8b8b8",
-      lastValueVisible: false,
-      priceLineVisible: false
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      priceLineColor: "rgba(242,242,242,0.62)",
+      priceLineStyle: LightweightCharts.LineStyle.Dotted
     });
     this.baselineSeries = this.priceChart.addLineSeries({
       color: "#ffff00",
@@ -901,8 +904,11 @@ class SingleFramePanel {
       borderDownColor: "#d7d7d7",
       wickUpColor: "#4caf50",
       wickDownColor: "#d7d7d7",
-      lastValueVisible: false,
-      priceLineVisible: false
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      priceLineColor: "rgba(242,242,242,0.62)",
+      priceLineStyle: LightweightCharts.LineStyle.Dotted
     });
     this.baselineSeries = this.priceChart.addLineSeries({ color: "#ffff00", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
     this.slowBaselineSeries = this.priceChart.addLineSeries({ color: "#9c27b0", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });

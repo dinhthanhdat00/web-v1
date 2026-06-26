@@ -125,6 +125,14 @@ const RSI_RULES = [
   ["Gần hết xuống", "Gần hết xuống", 55, "Chờ form Buy rõ hơn, hạn chế vào lệnh mới."]
 ];
 
+const MANUAL_RULE_STORAGE_KEY = "manualRsiRuleConfig";
+const MANUAL_TIMEFRAMES = ["2D", "1D", "H12", "H4", "2H", "1H"];
+const DEFAULT_MANUAL_RULE_CONFIG = {
+  frames: ["1D", "H12", "H4"],
+  states: ["Mới lên", "Mới lên", "Mới lên"]
+};
+let manualRuleConfig = { ...DEFAULT_MANUAL_RULE_CONFIG, frames: DEFAULT_MANUAL_RULE_CONFIG.frames.slice(), states: DEFAULT_MANUAL_RULE_CONFIG.states.slice() };
+
 const $ = (id) => document.getElementById(id);
 
 function pad2(value) {
@@ -1602,6 +1610,148 @@ function updateStrategyPanel(strategy) {
   checksEl.innerHTML = strategy.checks.map((item) => `<span>${item}</span>`).join("");
 }
 
+function loadManualRuleConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MANUAL_RULE_STORAGE_KEY) || "null");
+    if (!saved || !Array.isArray(saved.frames) || !Array.isArray(saved.states)) return;
+
+    manualRuleConfig = {
+      frames: [0, 1, 2].map((index) => MANUAL_TIMEFRAMES.includes(saved.frames[index]) ? saved.frames[index] : DEFAULT_MANUAL_RULE_CONFIG.frames[index]),
+      states: [0, 1, 2].map((index) => RSI_STATES.some((state) => state.name === saved.states[index]) ? saved.states[index] : DEFAULT_MANUAL_RULE_CONFIG.states[index])
+    };
+  } catch (err) {
+    manualRuleConfig = { ...DEFAULT_MANUAL_RULE_CONFIG, frames: DEFAULT_MANUAL_RULE_CONFIG.frames.slice(), states: DEFAULT_MANUAL_RULE_CONFIG.states.slice() };
+  }
+}
+
+function saveManualRuleConfig() {
+  localStorage.setItem(MANUAL_RULE_STORAGE_KEY, JSON.stringify(manualRuleConfig));
+}
+
+function optionHtml(values, selected) {
+  return values.map((value) => `<option value="${value}" ${value === selected ? "selected" : ""}>${value}</option>`).join("");
+}
+
+function renderManualRuleControls() {
+  loadManualRuleConfig();
+  document.querySelectorAll('[data-role="manual-frame"]').forEach((select) => {
+    const index = Number(select.dataset.index);
+    select.innerHTML = optionHtml(MANUAL_TIMEFRAMES, manualRuleConfig.frames[index]);
+    select.onchange = () => {
+      manualRuleConfig.frames[index] = select.value;
+      saveManualRuleConfig();
+      updateManualStrategy();
+    };
+  });
+
+  document.querySelectorAll('[data-role="manual-state"]').forEach((select) => {
+    const index = Number(select.dataset.index);
+    select.innerHTML = optionHtml(RSI_STATES.map((state) => state.name), manualRuleConfig.states[index]);
+    select.onchange = () => {
+      manualRuleConfig.states[index] = select.value;
+      saveManualRuleConfig();
+      updateManualStrategy();
+    };
+  });
+
+  const resetButton = $("resetManualRules");
+  if (resetButton) resetButton.onclick = () => {
+    manualRuleConfig = { ...DEFAULT_MANUAL_RULE_CONFIG, frames: DEFAULT_MANUAL_RULE_CONFIG.frames.slice(), states: DEFAULT_MANUAL_RULE_CONFIG.states.slice() };
+    saveManualRuleConfig();
+    renderManualRuleControls();
+    updateManualStrategy();
+  };
+
+  updateManualStrategy();
+}
+
+function strategySide(strategy) {
+  if (["buy", "hold-buy"].includes(strategy.tone)) return "long";
+  if (["sell", "hold-sell"].includes(strategy.tone)) return "short";
+  return "wait";
+}
+
+function combineManualStrategies(topRule, triggerRule) {
+  const topStrategy = strategyFromRule(topRule);
+  const triggerStrategy = strategyFromRule(triggerRule);
+  const topSide = strategySide(topStrategy);
+  const triggerSide = strategySide(triggerStrategy);
+
+  if (topSide === "wait" || triggerSide === "wait") {
+    return {
+      tone: "wait",
+      label: "WAIT",
+      title: "Chưa đủ đồng thuận 3 khung",
+      reason: "Một trong hai lớp rule đang yêu cầu quan sát, nên chưa có điểm vào sạch."
+    };
+  }
+
+  if (topSide !== triggerSide) {
+    return {
+      tone: "wait",
+      label: "WAIT",
+      title: "Hai lớp rule đang lệch pha",
+      reason: "Khung lớn→giữa và giữa→nhỏ chưa cùng hướng, ưu tiên đứng ngoài."
+    };
+  }
+
+  if (triggerStrategy.tone === "buy") {
+    return {
+      tone: "buy",
+      label: "BUY / LONG",
+      title: "Được phép canh Long",
+      reason: "Khung lớn ủng hộ hướng Long và khung nhỏ đang cho điểm kích hoạt."
+    };
+  }
+
+  if (triggerStrategy.tone === "sell") {
+    return {
+      tone: "sell",
+      label: "SELL / SHORT",
+      title: "Được phép canh Short",
+      reason: "Khung lớn ủng hộ hướng Short và khung nhỏ đang cho điểm kích hoạt."
+    };
+  }
+
+  return topSide === "long"
+    ? {
+        tone: "hold-buy",
+        label: "HOLD LONG",
+        title: "Nghiêng Long nhưng chờ điểm đẹp",
+        reason: "Ba khung không xung đột, nhưng khung nhỏ chưa cho điểm Buy mới."
+      }
+    : {
+        tone: "hold-sell",
+        label: "HOLD SHORT",
+        title: "Nghiêng Short nhưng chờ điểm đẹp",
+        reason: "Ba khung không xung đột, nhưng khung nhỏ chưa cho điểm Sell mới."
+      };
+}
+
+function updateManualStrategy() {
+  const [topFrame, midFrame, lowFrame] = manualRuleConfig.frames;
+  const [topState, midState, lowState] = manualRuleConfig.states;
+  const topRule = findRsiRule(topState, midState);
+  const triggerRule = findRsiRule(midState, lowState);
+  if (!topRule || !triggerRule) return;
+
+  const strategy = combineManualStrategies(topRule, triggerRule);
+  const panel = $("manualResult");
+  const labelEl = document.querySelector('[data-role="manual-strategy-label"]');
+  const titleEl = document.querySelector('[data-role="manual-strategy-title"]');
+  const reasonEl = document.querySelector('[data-role="manual-strategy-reason"]');
+  const topPairEl = document.querySelector('[data-role="manual-top-pair"]');
+  const triggerPairEl = document.querySelector('[data-role="manual-trigger-pair"]');
+  if (!panel || !labelEl || !titleEl || !reasonEl || !topPairEl || !triggerPairEl) return;
+
+  panel.className = `manual-result ${strategy.tone}`;
+  labelEl.textContent = strategy.label;
+  titleEl.textContent = strategy.title;
+  reasonEl.textContent = strategy.reason;
+  topPairEl.textContent = `${topFrame} → ${midFrame}: #${topRule.index + 1} / ${topRule.score} điểm`;
+  triggerPairEl.textContent = `${midFrame} → ${lowFrame}: #${triggerRule.index + 1} / ${triggerRule.score} điểm`;
+}
+
 function updateCurrentRule() {
   const parent = rsiFrameStates.get("h12");
   const child = rsiFrameStates.get("h4");
@@ -1699,6 +1849,7 @@ function boot() {
   syncParamInputs();
   bindControls();
   renderRsiRules();
+  renderManualRuleControls();
 
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {

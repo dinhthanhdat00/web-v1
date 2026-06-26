@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-strategy" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-3frame-manual" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -190,6 +190,47 @@
             </div>
           </header>
 
+          <section class="manual-rules" id="manualRulesPanel">
+            <header class="manual-rules-head">
+              <div>
+                <strong>3 khung tự config</strong>
+                <span>Chọn trạng thái từng khung để app gom thành tín hiệu dễ đánh.</span>
+              </div>
+              <button id="resetManualRules" type="button">Reset</button>
+            </header>
+            <div class="manual-rules-grid">
+              <label class="manual-rule-card">
+                <span>Khung lớn</span>
+                <select data-role="manual-frame" data-index="0"></select>
+                <select data-role="manual-state" data-index="0"></select>
+              </label>
+              <label class="manual-rule-card">
+                <span>Khung giữa</span>
+                <select data-role="manual-frame" data-index="1"></select>
+                <select data-role="manual-state" data-index="1"></select>
+              </label>
+              <label class="manual-rule-card">
+                <span>Khung nhỏ</span>
+                <select data-role="manual-frame" data-index="2"></select>
+                <select data-role="manual-state" data-index="2"></select>
+              </label>
+            </div>
+            <div class="manual-result" id="manualResult">
+              <div class="manual-result-signal">
+                <span>3-frame strategy</span>
+                <b data-role="manual-strategy-label">WAIT</b>
+              </div>
+              <div class="manual-result-detail">
+                <strong data-role="manual-strategy-title">Chờ config</strong>
+                <span data-role="manual-strategy-reason">Chọn đủ 3 trạng thái để app so khớp rule.</span>
+              </div>
+              <div class="manual-result-pairs">
+                <span data-role="manual-top-pair">Lớn → Giữa: --</span>
+                <span data-role="manual-trigger-pair">Giữa → Nhỏ: --</span>
+              </div>
+            </div>
+          </section>
+
           <section class="current-rule" id="currentRuleBox">
             <div class="current-rule-item">
               <span>Khung bố H12</span>
@@ -242,6 +283,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260627-rsi-strategy"></script>
+  <script src="assets/js/app.js?v=20260627-rsi-3frame-manual"></script>
 </body>
 </html>

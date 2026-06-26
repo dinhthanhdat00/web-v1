@@ -126,12 +126,18 @@ const RSI_RULES = [
 ];
 
 const MANUAL_RULE_STORAGE_KEY = "manualRsiRuleConfig";
+const TWO_RULE_STORAGE_KEY = "twoRsiRuleConfig";
 const MANUAL_TIMEFRAMES = ["2D", "1D", "H12", "H4", "2H", "1H"];
 const DEFAULT_MANUAL_RULE_CONFIG = {
   frames: ["1D", "H12", "H4"],
   states: ["Mới lên", "Mới lên", "Mới lên"]
 };
+const DEFAULT_TWO_RULE_CONFIG = {
+  frames: ["H12", "H4"],
+  states: ["Mới lên", "Mới lên"]
+};
 let manualRuleConfig = { ...DEFAULT_MANUAL_RULE_CONFIG, frames: DEFAULT_MANUAL_RULE_CONFIG.frames.slice(), states: DEFAULT_MANUAL_RULE_CONFIG.states.slice() };
+let twoRuleConfig = { ...DEFAULT_TWO_RULE_CONFIG, frames: DEFAULT_TWO_RULE_CONFIG.frames.slice(), states: DEFAULT_TWO_RULE_CONFIG.states.slice() };
 
 const $ = (id) => document.getElementById(id);
 
@@ -1628,8 +1634,59 @@ function saveManualRuleConfig() {
   localStorage.setItem(MANUAL_RULE_STORAGE_KEY, JSON.stringify(manualRuleConfig));
 }
 
+function loadTwoRuleConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TWO_RULE_STORAGE_KEY) || "null");
+    if (!saved || !Array.isArray(saved.frames) || !Array.isArray(saved.states)) return;
+
+    twoRuleConfig = {
+      frames: [0, 1].map((index) => MANUAL_TIMEFRAMES.includes(saved.frames[index]) ? saved.frames[index] : DEFAULT_TWO_RULE_CONFIG.frames[index]),
+      states: [0, 1].map((index) => RSI_STATES.some((state) => state.name === saved.states[index]) ? saved.states[index] : DEFAULT_TWO_RULE_CONFIG.states[index])
+    };
+  } catch (err) {
+    twoRuleConfig = { ...DEFAULT_TWO_RULE_CONFIG, frames: DEFAULT_TWO_RULE_CONFIG.frames.slice(), states: DEFAULT_TWO_RULE_CONFIG.states.slice() };
+  }
+}
+
+function saveTwoRuleConfig() {
+  localStorage.setItem(TWO_RULE_STORAGE_KEY, JSON.stringify(twoRuleConfig));
+}
+
 function optionHtml(values, selected) {
   return values.map((value) => `<option value="${value}" ${value === selected ? "selected" : ""}>${value}</option>`).join("");
+}
+
+function renderTwoRuleControls() {
+  loadTwoRuleConfig();
+  document.querySelectorAll('[data-role="two-frame"]').forEach((select) => {
+    const index = Number(select.dataset.index);
+    select.innerHTML = optionHtml(MANUAL_TIMEFRAMES, twoRuleConfig.frames[index]);
+    select.onchange = () => {
+      twoRuleConfig.frames[index] = select.value;
+      saveTwoRuleConfig();
+      updateCurrentRule();
+    };
+  });
+
+  document.querySelectorAll('[data-role="two-state"]').forEach((select) => {
+    const index = Number(select.dataset.index);
+    select.innerHTML = optionHtml(RSI_STATES.map((state) => state.name), twoRuleConfig.states[index]);
+    select.onchange = () => {
+      twoRuleConfig.states[index] = select.value;
+      saveTwoRuleConfig();
+      updateCurrentRule();
+    };
+  });
+
+  const resetButton = $("resetTwoManualRules");
+  if (resetButton) resetButton.onclick = () => {
+    twoRuleConfig = { ...DEFAULT_TWO_RULE_CONFIG, frames: DEFAULT_TWO_RULE_CONFIG.frames.slice(), states: DEFAULT_TWO_RULE_CONFIG.states.slice() };
+    saveTwoRuleConfig();
+    renderTwoRuleControls();
+    updateCurrentRule();
+  };
+
+  updateCurrentRule();
 }
 
 function renderManualRuleControls() {
@@ -1792,11 +1849,31 @@ function highlightThreeFrameCase() {
   activeRow?.classList.add("active-three-case");
 }
 
+function setRuleMode(mode, persist = true) {
+  const nextMode = mode === "three" ? "three" : "two";
+  document.querySelector(".rules-shell")?.setAttribute("data-rule-mode", nextMode);
+  document.querySelectorAll(".rule-mode-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.ruleMode === nextMode);
+  });
+  if (persist) localStorage.setItem("rsiRuleMode", nextMode);
+}
+
+function bindRuleModeTabs() {
+  document.querySelectorAll(".rule-mode-tab").forEach((button) => {
+    button.addEventListener("click", () => setRuleMode(button.dataset.ruleMode));
+  });
+  setRuleMode(localStorage.getItem("rsiRuleMode") || "two", false);
+}
+
 function updateCurrentRule() {
-  const parent = rsiFrameStates.get("h12");
-  const child = rsiFrameStates.get("h4");
+  const [parentFrame, childFrame] = twoRuleConfig.frames;
+  const [parentState, childState] = twoRuleConfig.states;
+  const parent = { state: parentState };
+  const child = { state: childState };
   const parentEl = document.querySelector('[data-role="parent-state"]');
   const childEl = document.querySelector('[data-role="child-state"]');
+  const parentLabelEl = document.querySelector('[data-role="two-parent-label"]');
+  const childLabelEl = document.querySelector('[data-role="two-child-label"]');
   const numberEl = document.querySelector('[data-role="rule-number"]');
   const scoreEl = document.querySelector('[data-role="rule-score"]');
   const actionEl = document.querySelector('[data-role="rule-action"]');
@@ -1804,8 +1881,10 @@ function updateCurrentRule() {
   document.querySelectorAll("#rsiRuleRows tr").forEach((row) => row.classList.remove("active-rule"));
   if (!parentEl || !childEl || !numberEl || !scoreEl || !actionEl) return;
 
-  parentEl.textContent = parent ? `${parent.state} / RSI ${fmt.format(parent.rsi)}` : "Đang tải";
-  childEl.textContent = child ? `${child.state} / RSI ${fmt.format(child.rsi)}` : "Đang tải";
+  if (parentLabelEl) parentLabelEl.textContent = `Khung bo ${parentFrame}`;
+  if (childLabelEl) childLabelEl.textContent = `Khung con ${childFrame}`;
+  parentEl.textContent = parent.state;
+  childEl.textContent = child.state;
 
   if (!parent || !child) {
     numberEl.textContent = "--";
@@ -1889,8 +1968,10 @@ function boot() {
   syncParamInputs();
   bindControls();
   renderRsiRules();
+  renderTwoRuleControls();
   renderManualRuleControls();
   renderThreeFrameCases();
+  bindRuleModeTabs();
 
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {

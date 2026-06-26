@@ -582,9 +582,51 @@ body {
   font-weight: 800;
 }
 
+.rule-mode-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #242938;
+  background: #10151f;
+}
+
+.rule-mode-tab {
+  height: 28px;
+  min-width: 78px;
+  padding: 0 12px;
+  border: 1px solid #2a3040;
+  border-radius: 4px;
+  background: #0d1119;
+  color: #9aa0ad;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.rule-mode-tab.active {
+  border-color: #2f5cff;
+  background: rgba(47, 92, 255, 0.32);
+  color: #f6f8ff;
+}
+
+.rules-shell[data-rule-mode="two"] .rule-mode-three,
+.rules-shell[data-rule-mode="three"] .rule-mode-two {
+  display: none;
+}
+
 .manual-rules {
   display: grid;
   grid-template-rows: auto auto auto;
+  gap: 1px;
+  padding: 1px;
+  border-bottom: 1px solid #242938;
+  background: #242938;
+}
+
+.two-manual-rules {
+  display: grid;
+  grid-template-rows: auto auto;
   gap: 1px;
   padding: 1px;
   border-bottom: 1px solid #242938;
@@ -635,6 +677,10 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 1px;
+}
+
+.manual-rules-grid.two-grid {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
 }
 
 .manual-rule-card {

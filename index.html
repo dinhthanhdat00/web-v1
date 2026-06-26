@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-3frame-cases" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-rule-tabs" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -182,7 +182,7 @@
       </main>
 
       <main id="rulesView" class="rules-view view-panel">
-        <section class="rules-shell">
+        <section class="rules-shell" data-rule-mode="two">
           <header class="rules-head">
             <div>
               <strong>Bảng RSI đa khung</strong>
@@ -190,7 +190,12 @@
             </div>
           </header>
 
-          <section class="manual-rules" id="manualRulesPanel">
+          <nav class="rule-mode-tabs" aria-label="RSI rule mode">
+            <button class="rule-mode-tab active" type="button" data-rule-mode="two">2 khung</button>
+            <button class="rule-mode-tab" type="button" data-rule-mode="three">3 khung</button>
+          </nav>
+
+          <section class="manual-rules rule-mode-three" id="manualRulesPanel">
             <header class="manual-rules-head">
               <div>
                 <strong>3 khung tự config</strong>
@@ -231,7 +236,7 @@
             </div>
           </section>
 
-          <section class="three-case-section">
+          <section class="three-case-section rule-mode-three">
             <header class="three-case-head">
               <strong>Bảng trường hợp 3 khung</strong>
               <span>216 case tự ghép từ 6 trạng thái RSI.</span>
@@ -255,13 +260,35 @@
             </div>
           </section>
 
-          <section class="current-rule" id="currentRuleBox">
+          <section class="two-manual-rules rule-mode-two" id="twoManualRulesPanel">
+            <header class="manual-rules-head">
+              <div>
+                <strong>2 khung tu config</strong>
+                <span>Chon khung bo/con va trang thai RSI de tinh rule.</span>
+              </div>
+              <button id="resetTwoManualRules" type="button">Reset</button>
+            </header>
+            <div class="manual-rules-grid two-grid">
+              <label class="manual-rule-card">
+                <span>Khung bo</span>
+                <select data-role="two-frame" data-index="0"></select>
+                <select data-role="two-state" data-index="0"></select>
+              </label>
+              <label class="manual-rule-card">
+                <span>Khung con</span>
+                <select data-role="two-frame" data-index="1"></select>
+                <select data-role="two-state" data-index="1"></select>
+              </label>
+            </div>
+          </section>
+
+          <section class="current-rule rule-mode-two" id="currentRuleBox">
             <div class="current-rule-item">
-              <span>Khung bố H12</span>
+              <span data-role="two-parent-label">Khung bo</span>
               <b data-role="parent-state">Đang tải</b>
             </div>
             <div class="current-rule-item">
-              <span>Khung con H4</span>
+              <span data-role="two-child-label">Khung con</span>
               <b data-role="child-state">Đang tải</b>
             </div>
             <div class="current-rule-item">
@@ -274,7 +301,7 @@
             </div>
           </section>
 
-          <section class="strategy-panel" id="strategyPanel">
+          <section class="strategy-panel rule-mode-two" id="strategyPanel">
             <div class="strategy-signal">
               <span>Strategy</span>
               <b data-role="strategy-label">WAIT</b>
@@ -286,9 +313,9 @@
             <div class="strategy-checks" data-role="strategy-checks"></div>
           </section>
 
-          <div class="rsi-state-grid" id="rsiStateGrid"></div>
+          <div class="rsi-state-grid rule-mode-two" id="rsiStateGrid"></div>
 
-          <div class="rules-table-wrap">
+          <div class="rules-table-wrap rule-mode-two">
             <table class="rules-table">
               <thead>
                 <tr>
@@ -307,6 +334,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260627-rsi-3frame-cases"></script>
+  <script src="assets/js/app.js?v=20260627-rsi-rule-tabs"></script>
 </body>
 </html>

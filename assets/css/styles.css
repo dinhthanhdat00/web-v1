@@ -744,6 +744,108 @@ body {
   background: #42a5f5;
 }
 
+.three-case-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 260px;
+  max-height: 420px;
+  border-bottom: 1px solid #242938;
+  background: #0f1219;
+}
+
+.three-case-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-bottom: 1px solid #242938;
+  background: #111620;
+}
+
+.three-case-head strong {
+  color: #f6f8ff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.three-case-head span {
+  color: #9aa0ad;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.three-case-table-wrap {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.three-case-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.three-case-table th,
+.three-case-table td {
+  padding: 7px 8px;
+  border: 1px solid #2a3040;
+  color: #d8deea;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.three-case-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #181d28;
+  color: #f6f8ff;
+  text-transform: uppercase;
+}
+
+.three-case-table tr:nth-child(even) td {
+  background: #121722;
+}
+
+.three-case-table tr.active-three-case td {
+  background: rgba(47, 92, 255, 0.24);
+  border-color: rgba(88, 128, 255, 0.75);
+  color: #f6f8ff;
+}
+
+.case-signal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  height: 22px;
+  border-radius: 4px;
+  color: #07110a;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.case-buy {
+  background: #4caf50;
+}
+
+.case-sell {
+  background: #ff6b6b;
+}
+
+.case-hold-buy,
+.case-hold-sell {
+  background: #42a5f5;
+}
+
+.case-wait {
+  background: #ffd54f;
+}
+
 .current-rule {
   display: grid;
   grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(100px, 0.45fr) minmax(260px, 2fr);
@@ -1073,6 +1175,16 @@ body {
 
   .manual-rule-card select {
     width: 100%;
+  }
+
+  .three-case-section {
+    max-height: 360px;
+  }
+
+  .three-case-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .rsi-state-grid {

@@ -1665,6 +1665,38 @@ function renderManualRuleControls() {
   updateManualStrategy();
 }
 
+function renderThreeFrameCases() {
+  const rowsNode = $("threeFrameRows");
+  if (!rowsNode) return;
+
+  const stateNames = RSI_STATES.map((state) => state.name);
+  const rows = [];
+  stateNames.forEach((topState) => {
+    stateNames.forEach((midState) => {
+      stateNames.forEach((lowState) => {
+        const topRule = findRsiRule(topState, midState);
+        const triggerRule = findRsiRule(midState, lowState);
+        const strategy = combineManualStrategies(topRule, triggerRule);
+        rows.push({ topState, midState, lowState, topRule, triggerRule, strategy });
+      });
+    });
+  });
+
+  rowsNode.innerHTML = rows.map((row, index) => `
+    <tr data-top-state="${row.topState}" data-mid-state="${row.midState}" data-low-state="${row.lowState}">
+      <td>${index + 1}</td>
+      <td>${row.topState}</td>
+      <td>${row.midState}</td>
+      <td>${row.lowState}</td>
+      <td>#${row.topRule.index + 1} / ${row.topRule.score}</td>
+      <td>#${row.triggerRule.index + 1} / ${row.triggerRule.score}</td>
+      <td><b class="case-signal case-${row.strategy.tone}">${row.strategy.label}</b></td>
+      <td>${row.strategy.title}</td>
+    </tr>
+  `).join("");
+  highlightThreeFrameCase();
+}
+
 function strategySide(strategy) {
   if (["buy", "hold-buy"].includes(strategy.tone)) return "long";
   if (["sell", "hold-sell"].includes(strategy.tone)) return "short";
@@ -1750,6 +1782,14 @@ function updateManualStrategy() {
   reasonEl.textContent = strategy.reason;
   topPairEl.textContent = `${topFrame} → ${midFrame}: #${topRule.index + 1} / ${topRule.score} điểm`;
   triggerPairEl.textContent = `${midFrame} → ${lowFrame}: #${triggerRule.index + 1} / ${triggerRule.score} điểm`;
+  highlightThreeFrameCase();
+}
+
+function highlightThreeFrameCase() {
+  const [topState, midState, lowState] = manualRuleConfig.states;
+  document.querySelectorAll("#threeFrameRows tr").forEach((row) => row.classList.remove("active-three-case"));
+  const activeRow = document.querySelector(`#threeFrameRows tr[data-top-state="${topState}"][data-mid-state="${midState}"][data-low-state="${lowState}"]`);
+  activeRow?.classList.add("active-three-case");
 }
 
 function updateCurrentRule() {
@@ -1850,6 +1890,7 @@ function boot() {
   bindControls();
   renderRsiRules();
   renderManualRuleControls();
+  renderThreeFrameCases();
 
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {

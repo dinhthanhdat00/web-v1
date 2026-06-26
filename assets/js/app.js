@@ -58,6 +58,72 @@ const layerState = {
   signals: true
 };
 
+const RSI_STATES = [
+  {
+    name: "Mới lên",
+    description: "RSI vừa cắt lên trên EMA9 hoặc WMA45, thường là điểm 3 cho form Long."
+  },
+  {
+    name: "Lên 1/2",
+    description: "RSI đã mở rộng khoảng cách đáng kể, xu hướng lên đang chạy."
+  },
+  {
+    name: "Gần hết lên",
+    description: "RSI bắt đầu cuộn lại sau nhịp lên, chuẩn bị cho form Sell."
+  },
+  {
+    name: "Mới xuống",
+    description: "RSI vừa cắt xuống dưới EMA9 hoặc WMA45, thường là điểm 3 cho form Short."
+  },
+  {
+    name: "Xuống 1/2",
+    description: "Lực xả đang mạnh và đã đi được một quãng."
+  },
+  {
+    name: "Gần hết xuống",
+    description: "RSI cạn lực xuống, chuẩn bị tạo form Buy."
+  }
+];
+
+const RSI_RULES = [
+  ["Mới lên", "Mới lên", 100, "Vào Long full với khung con."],
+  ["Mới lên", "Lên 1/2", 90, "Vào Long. Xu hướng đang được duy trì tốt."],
+  ["Mới lên", "Gần hết lên", 80, "Gồng Long. Đã qua điểm vào đẹp, chuẩn bị quản lý lệnh."],
+  ["Mới lên", "Mới xuống", 70, "Gồng Long. Coi khung con là nhiễu vì khung bố mới xuất phát."],
+  ["Mới lên", "Xuống 1/2", 60, "Quan sát. Chờ khung con điều chỉnh xong tạo form Buy để vào."],
+  ["Mới lên", "Gần hết xuống", 80, "Canh Long. Khung con sắp hết lực xả, chuẩn bị bồi lệnh."],
+  ["Lên 1/2", "Mới lên", 90, "Vào Long theo xu hướng, ưu tiên nhịp pullback vừa xong."],
+  ["Lên 1/2", "Lên 1/2", 85, "Giữ hoặc đi theo Long, nhưng hạn chế đuổi quá xa."],
+  ["Lên 1/2", "Gần hết lên", 70, "Quản lý Long, chốt bớt nếu RSI khung con cuộn lại rõ."],
+  ["Lên 1/2", "Mới xuống", 60, "Gồng nhẹ hoặc giảm vị thế, chờ khung con xác nhận lại."],
+  ["Lên 1/2", "Xuống 1/2", 50, "Quan sát, không mua đuổi. Đợi khung con cạn lực xả."],
+  ["Lên 1/2", "Gần hết xuống", 75, "Canh Long lại khi khung con tạo form Buy."],
+  ["Gần hết lên", "Mới lên", 75, "Long ngắn được, nhưng khung bố đã cuối pha nên quản lý sát."],
+  ["Gần hết lên", "Lên 1/2", 65, "Long còn lực nhưng rủi ro cao, tránh vào quá lớn."],
+  ["Gần hết lên", "Gần hết lên", 55, "Canh chốt Long, chuẩn bị kịch bản Sell."],
+  ["Gần hết lên", "Mới xuống", 80, "Ưu tiên thoát Long hoặc canh Sell sớm khi khung con xác nhận."],
+  ["Gần hết lên", "Xuống 1/2", 90, "Sell thuận pha đảo chiều, lực xuống đang mở."],
+  ["Gần hết lên", "Gần hết xuống", 70, "Gồng Sell hoặc đợi hồi, tránh bán trễ ở đáy khung con."],
+  ["Mới xuống", "Mới lên", 70, "Gồng Short. Coi khung con là nhịp hồi kỹ thuật."],
+  ["Mới xuống", "Lên 1/2", 60, "Quan sát. Đợi khung con cuộn xuống rồi mới Short."],
+  ["Mới xuống", "Gần hết lên", 80, "Canh Short vì khung con hồi gần xong."],
+  ["Mới xuống", "Mới xuống", 100, "Vào Short full với khung con."],
+  ["Mới xuống", "Xuống 1/2", 90, "Vào hoặc giữ Short. Xu hướng xuống đang duy trì tốt."],
+  ["Mới xuống", "Gần hết xuống", 80, "Gồng Short, đồng thời chuẩn bị quản lý lệnh."],
+  ["Xuống 1/2", "Mới lên", 60, "Giảm Short hoặc đợi hồi xong, không Sell đuổi."],
+  ["Xuống 1/2", "Lên 1/2", 50, "Quan sát, Short đang bị hồi ngược."],
+  ["Xuống 1/2", "Gần hết lên", 75, "Canh Short lại khi khung con hết lực hồi."],
+  ["Xuống 1/2", "Mới xuống", 90, "Short theo khung bố, điểm vào đẹp nếu phá xuống tiếp."],
+  ["Xuống 1/2", "Xuống 1/2", 85, "Giữ Short nhưng tránh vào muộn."],
+  ["Xuống 1/2", "Gần hết xuống", 70, "Quản lý Short, chốt bớt khi khung con cạn lực."],
+  ["Gần hết xuống", "Mới lên", 80, "Canh Long sớm vì khung bố bắt đầu cạn lực xuống."],
+  ["Gần hết xuống", "Lên 1/2", 90, "Vào hoặc giữ Long hồi phục, lực mua đang mở."],
+  ["Gần hết xuống", "Gần hết lên", 70, "Gồng Long ngắn, khung con gần cuối pha hồi."],
+  ["Gần hết xuống", "Mới xuống", 75, "Short ngắn và rủi ro cao vì khung bố đã gần cạn lực."],
+  ["Gần hết xuống", "Xuống 1/2", 65, "Quan sát, tránh Sell đuổi ở vùng cuối xu hướng."],
+  ["Gần hết xuống", "Gần hết xuống", 55, "Chờ form Buy rõ hơn, hạn chế vào lệnh mới."]
+];
+
 const $ = (id) => document.getElementById(id);
 
 function pad2(value) {
@@ -1331,8 +1397,31 @@ function redrawAll() {
   singlePanel?.draw(false);
 }
 
+function renderRsiRules() {
+  const stateGrid = $("rsiStateGrid");
+  const ruleRows = $("rsiRuleRows");
+  if (!stateGrid || !ruleRows) return;
+
+  stateGrid.innerHTML = RSI_STATES.map((state, index) => `
+    <article class="rsi-state">
+      <b>${index + 1}. ${state.name}</b>
+      <span>${state.description}</span>
+    </article>
+  `).join("");
+
+  ruleRows.innerHTML = RSI_RULES.map(([parentState, childState, score, action], index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${parentState}</td>
+      <td>${childState}</td>
+      <td><b class="score score-${score >= 85 ? "high" : score >= 70 ? "mid" : "low"}">${score}</b></td>
+      <td>${action}</td>
+    </tr>
+  `).join("");
+}
+
 function setActiveView(view, persist = true) {
-  const nextView = ["chart", "single", "rsi"].includes(view) ? view : "chart";
+  const nextView = ["chart", "single", "rsi", "rules"].includes(view) ? view : "chart";
   document.body.classList.toggle("rsi-view-active", nextView === "rsi");
   document.body.classList.toggle("single-view-active", nextView === "single");
   document.querySelectorAll(".view-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === nextView));
@@ -1384,6 +1473,7 @@ function boot() {
 
   syncParamInputs();
   bindControls();
+  renderRsiRules();
 
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {

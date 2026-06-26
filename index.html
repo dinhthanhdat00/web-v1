@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260624-horizontal-controls" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-rules" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -29,6 +29,7 @@
         <button class="view-tab active" type="button" data-view="chart">Chart</button>
         <button class="view-tab" type="button" data-view="single">Single</button>
         <button class="view-tab" type="button" data-view="rsi">RSI Only</button>
+        <button class="view-tab" type="button" data-view="rules">RSI Rules</button>
       </nav>
 
       <div id="symbolTitle" class="symbol-title">Bitcoin / TetherUS</div>
@@ -179,9 +180,37 @@
           <div class="single-rsi-chart" data-role="single-rsi-chart"></div>
         </section>
       </main>
+
+      <main id="rulesView" class="rules-view view-panel">
+        <section class="rules-shell">
+          <header class="rules-head">
+            <div>
+              <strong>Bảng RSI đa khung</strong>
+              <span>Khung bố: H12/D1/2D. Khung con: H4/H12/D1.</span>
+            </div>
+          </header>
+
+          <div class="rsi-state-grid" id="rsiStateGrid"></div>
+
+          <div class="rules-table-wrap">
+            <table class="rules-table">
+              <thead>
+                <tr>
+                  <th>STT</th>
+                  <th>Trạng thái bố</th>
+                  <th>Trạng thái con</th>
+                  <th>Điểm đồng thuận</th>
+                  <th>Hành động</th>
+                </tr>
+              </thead>
+              <tbody id="rsiRuleRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260626-right-price-line"></script>
+  <script src="assets/js/app.js?v=20260627-rsi-rules"></script>
 </body>
 </html>

@@ -181,6 +181,33 @@ function aggregateCandles(source, groupSize) {
   return result;
 }
 
+function timeframeSeconds(config) {
+  const match = String(config.apiTf || "").match(/^(\d+)([hdwM])$/);
+  if (!match) return 4 * 60 * 60;
+
+  const value = Number(match[1]);
+  const unit = match[2];
+  const baseSeconds = {
+    h: 60 * 60,
+    d: 24 * 60 * 60,
+    w: 7 * 24 * 60 * 60,
+    M: 30 * 24 * 60 * 60
+  }[unit];
+
+  return value * baseSeconds * (config.aggregate || 1);
+}
+
+function currentPriceLineData(candles, config, barsRight = 80) {
+  if (!candles.length) return [];
+
+  const last = candles[candles.length - 1];
+  const step = timeframeSeconds(config);
+  return Array.from({ length: barsRight + 1 }, (_, index) => ({
+    time: last.time + step * index,
+    value: last.close
+  }));
+}
+
 function emaFromValues(values, length) {
   const result = [];
   const k = 2 / (length + 1);
@@ -643,11 +670,16 @@ class MarketPanel {
       borderDownColor: "#b8b8b8",
       wickUpColor: "#4caf50",
       wickDownColor: "#b8b8b8",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.currentPriceSeries = this.priceChart.addLineSeries({
+      color: "rgba(242,242,242,0.72)",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      title: "",
       lastValueVisible: true,
-      priceLineVisible: true,
-      priceLineWidth: 1,
-      priceLineColor: "rgba(242,242,242,0.62)",
-      priceLineStyle: LightweightCharts.LineStyle.Dotted
+      priceLineVisible: false
     });
     this.baselineSeries = this.priceChart.addLineSeries({
       color: "#ffff00",
@@ -735,6 +767,7 @@ class MarketPanel {
         wickColor: bodyColor
       };
     }));
+    this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
@@ -904,11 +937,16 @@ class SingleFramePanel {
       borderDownColor: "#d7d7d7",
       wickUpColor: "#4caf50",
       wickDownColor: "#d7d7d7",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.currentPriceSeries = this.priceChart.addLineSeries({
+      color: "rgba(242,242,242,0.72)",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      title: "",
       lastValueVisible: true,
-      priceLineVisible: true,
-      priceLineWidth: 1,
-      priceLineColor: "rgba(242,242,242,0.62)",
-      priceLineStyle: LightweightCharts.LineStyle.Dotted
+      priceLineVisible: false
     });
     this.baselineSeries = this.priceChart.addLineSeries({ color: "#ffff00", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
     this.slowBaselineSeries = this.priceChart.addLineSeries({ color: "#9c27b0", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
@@ -1102,6 +1140,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
+    this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);

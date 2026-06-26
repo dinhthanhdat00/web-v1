@@ -388,7 +388,25 @@ function recentCross(rows, direction, lookback = 2) {
   return false;
 }
 
-function detectRsiState(rsiData, rsiEmaData, rsiWmaData) {
+function recentSignalState(signalMarkers, rsiData, lookback = 8) {
+  if (!signalMarkers.length || !rsiData.length) return null;
+
+  const recentTimes = new Set(rsiData.slice(-lookback).map((point) => point.time));
+  const recentMarkers = signalMarkers
+    .filter((item) => recentTimes.has(item.time) && ["2", "3"].includes(String(item.text)))
+    .sort((a, b) => a.time - b.time);
+  const lastMarker = recentMarkers[recentMarkers.length - 1];
+  if (!lastMarker) return null;
+
+  if (lastMarker.position === "belowBar") return "Mới lên";
+  if (lastMarker.position === "aboveBar") return "Mới xuống";
+  return null;
+}
+
+function detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers = []) {
+  const signalState = recentSignalState(signalMarkers, rsiData);
+  if (signalState) return signalState;
+
   const rows = alignedRsiRows(rsiData, rsiEmaData, rsiWmaData);
   if (rows.length < 4) return null;
 
@@ -907,7 +925,7 @@ class MarketPanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
-    const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData);
+    const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
     if (rsiState) {
       rsiFrameStates.set(this.config.key, {
         state: rsiState,

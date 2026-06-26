@@ -37,6 +37,7 @@ let tickerWs = null;
 let singlePanel = null;
 const panels = new Map();
 const rsiOnlyPanels = new Map();
+const rsiFrameStates = new Map();
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const DEFAULT_PARAMS = {
   baselineLength: 70,
@@ -353,6 +354,70 @@ function rsiColorData(rsiData) {
     if (point.value >= RSI_HIGH_LEVEL) color = RSI_HIGH_COLOR;
     return { ...point, color };
   });
+}
+
+function alignedRsiRows(rsiData, rsiEmaData, rsiWmaData) {
+  const emaByTime = valueMap(rsiEmaData);
+  const wmaByTime = valueMap(rsiWmaData);
+  return rsiData
+    .map((point) => ({
+      time: point.time,
+      rsi: point.value,
+      ema: emaByTime.get(point.time),
+      wma: wmaByTime.get(point.time)
+    }))
+    .filter((row) => row.ema !== undefined && row.wma !== undefined);
+}
+
+function recentCross(rows, direction, lookback = 2) {
+  const start = Math.max(1, rows.length - lookback);
+  for (let i = rows.length - 1; i >= start; i -= 1) {
+    const prev = rows[i - 1];
+    const curr = rows[i];
+    if (!prev || !curr) continue;
+
+    const emaCrossUp = prev.rsi <= prev.ema && curr.rsi > curr.ema;
+    const wmaCrossUp = prev.rsi <= prev.wma && curr.rsi > curr.wma;
+    const emaCrossDown = prev.rsi >= prev.ema && curr.rsi < curr.ema;
+    const wmaCrossDown = prev.rsi >= prev.wma && curr.rsi < curr.wma;
+
+    if (direction === "up" && (emaCrossUp || wmaCrossUp)) return true;
+    if (direction === "down" && (emaCrossDown || wmaCrossDown)) return true;
+  }
+
+  return false;
+}
+
+function detectRsiState(rsiData, rsiEmaData, rsiWmaData) {
+  const rows = alignedRsiRows(rsiData, rsiEmaData, rsiWmaData);
+  if (rows.length < 4) return null;
+
+  const last = rows[rows.length - 1];
+  const prev = rows[rows.length - 2];
+  const earlier = rows[rows.length - 4];
+  const spread = Math.max(Math.abs(last.rsi - last.ema), Math.abs(last.rsi - last.wma));
+  const prevSpread = Math.max(Math.abs(prev.rsi - prev.ema), Math.abs(prev.rsi - prev.wma));
+  const earlySpread = Math.max(Math.abs(earlier.rsi - earlier.ema), Math.abs(earlier.rsi - earlier.wma));
+  const spreadShrinking = spread <= prevSpread && spread <= earlySpread;
+  const rsiRising = last.rsi > prev.rsi;
+  const rsiFalling = last.rsi < prev.rsi;
+  const aboveBoth = last.rsi > last.ema && last.rsi > last.wma;
+  const belowBoth = last.rsi < last.ema && last.rsi < last.wma;
+
+  if (recentCross(rows, "up")) return "Mới lên";
+  if (recentCross(rows, "down")) return "Mới xuống";
+
+  if (aboveBoth) {
+    return spreadShrinking || rsiFalling ? "Gần hết lên" : "Lên 1/2";
+  }
+
+  if (belowBoth) {
+    return spreadShrinking || rsiRising ? "Gần hết xuống" : "Xuống 1/2";
+  }
+
+  if (last.rsi >= last.ema && last.rsi >= last.wma) return rsiFalling ? "Gần hết lên" : "Lên 1/2";
+  if (last.rsi <= last.ema && last.rsi <= last.wma) return rsiRising ? "Gần hết xuống" : "Xuống 1/2";
+  return last.rsi >= prev.rsi ? "Mới lên" : "Mới xuống";
 }
 
 function countRecentEmaCrosses(rows, index) {
@@ -842,6 +907,14 @@ class MarketPanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
+    const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData);
+    if (rsiState) {
+      rsiFrameStates.set(this.config.key, {
+        state: rsiState,
+        rsi: rsiData.length ? rsiData[rsiData.length - 1].value : null
+      });
+      updateCurrentRule();
+    }
 
     const last = candles[candles.length - 1];
     this.closeEl.textContent = fmt.format(last.close);
@@ -1410,7 +1483,7 @@ function renderRsiRules() {
   `).join("");
 
   ruleRows.innerHTML = RSI_RULES.map(([parentState, childState, score, action], index) => `
-    <tr>
+    <tr data-parent-state="${parentState}" data-child-state="${childState}">
       <td>${index + 1}</td>
       <td>${parentState}</td>
       <td>${childState}</td>
@@ -1418,6 +1491,50 @@ function renderRsiRules() {
       <td>${action}</td>
     </tr>
   `).join("");
+  updateCurrentRule();
+}
+
+function findRsiRule(parentState, childState) {
+  const index = RSI_RULES.findIndex(([parent, child]) => parent === parentState && child === childState);
+  if (index < 0) return null;
+
+  const [parent, child, score, action] = RSI_RULES[index];
+  return { index, parent, child, score, action };
+}
+
+function updateCurrentRule() {
+  const parent = rsiFrameStates.get("h12");
+  const child = rsiFrameStates.get("h4");
+  const parentEl = document.querySelector('[data-role="parent-state"]');
+  const childEl = document.querySelector('[data-role="child-state"]');
+  const numberEl = document.querySelector('[data-role="rule-number"]');
+  const scoreEl = document.querySelector('[data-role="rule-score"]');
+  const actionEl = document.querySelector('[data-role="rule-action"]');
+
+  document.querySelectorAll("#rsiRuleRows tr").forEach((row) => row.classList.remove("active-rule"));
+  if (!parentEl || !childEl || !numberEl || !scoreEl || !actionEl) return;
+
+  parentEl.textContent = parent ? `${parent.state} / RSI ${fmt.format(parent.rsi)}` : "Đang tải";
+  childEl.textContent = child ? `${child.state} / RSI ${fmt.format(child.rsi)}` : "Đang tải";
+
+  if (!parent || !child) {
+    numberEl.textContent = "--";
+    scoreEl.textContent = "Điểm --";
+    scoreEl.className = "";
+    actionEl.textContent = "Chờ đủ dữ liệu RSI H12 và H4.";
+    return;
+  }
+
+  const rule = findRsiRule(parent.state, child.state);
+  if (!rule) return;
+
+  numberEl.textContent = `#${rule.index + 1}`;
+  scoreEl.textContent = `Điểm ${rule.score}`;
+  scoreEl.className = `score-tag score-${rule.score >= 85 ? "high" : rule.score >= 70 ? "mid" : "low"}`;
+  actionEl.textContent = rule.action;
+
+  const activeRow = document.querySelector(`#rsiRuleRows tr[data-parent-state="${rule.parent}"][data-child-state="${rule.child}"]`);
+  activeRow?.classList.add("active-rule");
 }
 
 function setActiveView(view, persist = true) {

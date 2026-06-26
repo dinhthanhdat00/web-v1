@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-rules" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-current-rule" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -190,6 +190,25 @@
             </div>
           </header>
 
+          <section class="current-rule" id="currentRuleBox">
+            <div class="current-rule-item">
+              <span>Khung bố H12</span>
+              <b data-role="parent-state">Đang tải</b>
+            </div>
+            <div class="current-rule-item">
+              <span>Khung con H4</span>
+              <b data-role="child-state">Đang tải</b>
+            </div>
+            <div class="current-rule-item">
+              <span>Trường hợp</span>
+              <b data-role="rule-number">--</b>
+            </div>
+            <div class="current-rule-action">
+              <span data-role="rule-score">Điểm --</span>
+              <b data-role="rule-action">Chờ đủ dữ liệu RSI H12 và H4.</b>
+            </div>
+          </section>
+
           <div class="rsi-state-grid" id="rsiStateGrid"></div>
 
           <div class="rules-table-wrap">
@@ -211,6 +230,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260627-rsi-rules"></script>
+  <script src="assets/js/app.js?v=20260627-rsi-current-rule"></script>
 </body>
 </html>

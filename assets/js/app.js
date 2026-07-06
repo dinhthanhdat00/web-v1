@@ -778,6 +778,382 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
   };
 }
 
+function barssince(flags, index) {
+  for (let i = index; i >= 0; i -= 1) {
+    if (flags[i]) return index - i;
+  }
+  return Infinity;
+}
+
+function lowest(candles, index, lookback, field = "low") {
+  const start = Math.max(0, index - lookback + 1);
+  let value = Infinity;
+  for (let i = start; i <= index; i += 1) value = Math.min(value, candles[i][field]);
+  return value;
+}
+
+function highest(candles, index, lookback, field = "high") {
+  const start = Math.max(0, index - lookback + 1);
+  let value = -Infinity;
+  for (let i = start; i <= index; i += 1) value = Math.max(value, candles[i][field]);
+  return value;
+}
+
+function semanticFamilySide(stateCode) {
+  if (stateCode >= SEM.BUY_I && stateCode <= SEM.BUY_TRAP_WAIT) return 1;
+  if (stateCode >= SEM.SELL_I && stateCode <= SEM.SELL_TRAP_WAIT) return -1;
+  return 0;
+}
+
+function semanticTriggerTier(stateCode) {
+  if ([SEM.BUY_1, SEM.BUY_2, SEM.BUY_3, SEM.SELL_1, SEM.SELL_2, SEM.SELL_3].includes(stateCode)) return 2;
+  if ([SEM.BUY_I, SEM.BUY_II, SEM.BUY_STALE, SEM.BUY_TRAP_WAIT, SEM.SELL_I, SEM.SELL_II, SEM.SELL_STALE, SEM.SELL_TRAP_WAIT].includes(stateCode)) return 1;
+  return 0;
+}
+
+function semanticBiasCode(stateCode) {
+  if (stateCode === SEM.BUY_I) return -1;
+  if ([SEM.BUY_1, SEM.BUY_2, SEM.BUY_3, SEM.BUY_STALE].includes(stateCode)) return 1;
+  if (stateCode === SEM.SELL_I) return 1;
+  if ([SEM.SELL_1, SEM.SELL_2, SEM.SELL_3, SEM.SELL_STALE].includes(stateCode)) return -1;
+  return 0;
+}
+
+function regimeState(side, d2Bias, d2Trap) {
+  if (!side) return "D2_NEUTRAL";
+  if ((side === 1 && d2Trap === -1) || (side === -1 && d2Trap === 1)) return "D2_TRAP";
+  if (d2Bias === -side) return "D2_OPPOSE";
+  if (d2Bias === side) return "D2_SUPPORT";
+  return "D2_NEUTRAL";
+}
+
+function mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2State) {
+  if (!hasTrigger) return "MTF_NO_TRIGGER";
+  if (strongConflict) return "MTF_STRONG_CONFLICT";
+  if (d2State === "D2_TRAP") return "MTF_D2_TRAP";
+  if (d2State === "D2_OPPOSE") return "MTF_D2_OPPOSE";
+  if (weakCounter) return "MTF_WEAK_COUNTER";
+  if (d2State === "D2_SUPPORT") return "MTF_D2_SUPPORT";
+  return "MTF_D2_NEUTRAL";
+}
+
+function entryModeLabel(hasTrigger, mtfState, d2State) {
+  if (!hasTrigger || mtfState === "MTF_STRONG_CONFLICT" || d2State === "D2_TRAP") return "NO-TRADE";
+  if (d2State === "D2_SUPPORT" && mtfState !== "MTF_WEAK_COUNTER") return "FULL ENTRY";
+  return "PARTIAL ONLY";
+}
+
+function triggerLabel(tfName, lane, side, code) {
+  if (!code) return "none";
+  return `${tfName}/${lane}/${side === 1 ? "B" : "S"}${Math.abs(code) === 4 ? "2" : "3"}`;
+}
+
+function computeFramePacks(candles) {
+  const rsiData = rsi(candles, params.rsiLength);
+  const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
+  const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
+  const rows = alignedRsiRows(rsiData, rsiEmaData, rsiWmaData);
+  const rowByTime = new Map(rows.map((row) => [row.time, row]));
+  const aligned = candles.map((candle) => rowByTime.get(candle.time) || null);
+  const packs = [];
+  const emaCrossFlags = [];
+  const wmaCrossUpFlags = [];
+  const wmaCrossDownFlags = [];
+  const buy2Condition = [];
+  const sell2Condition = [];
+  const buy3Condition = [];
+  const sell3Condition = [];
+  let side = 0;
+  let point = 0;
+  let stateBar = null;
+  let semanticState = SEM.INIT;
+
+  for (let index = 0; index < candles.length; index += 1) {
+    const row = aligned[index];
+    const prev = aligned[index - 1];
+    const candle = candles[index];
+    if (!row || !prev) {
+      packs.push(null);
+      emaCrossFlags[index] = false;
+      wmaCrossUpFlags[index] = false;
+      wmaCrossDownFlags[index] = false;
+      continue;
+    }
+
+    const prevSpread = Math.max(Math.abs(prev.rsi - prev.ema), Math.abs(prev.rsi - prev.wma), Math.abs(prev.ema - prev.wma));
+    const spread = Math.max(Math.abs(row.rsi - row.ema), Math.abs(row.rsi - row.wma), Math.abs(row.ema - row.wma));
+    const aboveBoth = row.rsi > row.ema && row.rsi > row.wma;
+    const belowBoth = row.rsi < row.ema && row.rsi < row.wma;
+    const betweenBoth = !aboveBoth && !belowBoth;
+    const spreadShrinking = spread <= prevSpread;
+    const linesExpanding = spread > prevSpread;
+    const rsiRising = row.rsi >= prev.rsi;
+    const rsiFalling = row.rsi <= prev.rsi;
+    const emaFlatUp = row.ema >= prev.ema;
+    const emaFlatDown = row.ema <= prev.ema;
+    const emaCrossUp = prev.rsi <= prev.ema && row.rsi > row.ema;
+    const emaCrossDown = prev.rsi >= prev.ema && row.rsi < row.ema;
+    const wmaCrossUp = prev.rsi <= prev.wma && row.rsi > row.wma;
+    const wmaCrossDown = prev.rsi >= prev.wma && row.rsi < row.wma;
+    emaCrossFlags[index] = emaCrossUp || emaCrossDown;
+    wmaCrossUpFlags[index] = wmaCrossUp;
+    wmaCrossDownFlags[index] = wmaCrossDown;
+    const recentEmaCrosses = emaCrossFlags.slice(Math.max(0, index - STRATEGY_CONFIG.noiseLookback + 1), index + 1).filter(Boolean).length;
+    const noiseState = recentEmaCrosses >= STRATEGY_CONFIG.noiseCrossCount && betweenBoth;
+    const buyConverging = belowBoth && !linesExpanding && (spreadShrinking || rsiRising || emaFlatUp);
+    const sellConverging = aboveBoth && !linesExpanding && (spreadShrinking || rsiFalling || emaFlatDown);
+    const emaWmaTrendSide = row.ema > row.wma ? 1 : row.ema < row.wma ? -1 : 0;
+    const buyPointsAllowed = !STRATEGY_CONFIG.filterPointsByEmaWmaTrend || emaWmaTrendSide === -1;
+    const sellPointsAllowed = !STRATEGY_CONFIG.filterPointsByEmaWmaTrend || emaWmaTrendSide === 1;
+    const rsiPeakVal = index > 1 && prev.rsi > aligned[index - 2]?.rsi && prev.rsi > row.rsi ? prev.rsi : null;
+    const rsiTroughVal = index > 1 && prev.rsi < aligned[index - 2]?.rsi && prev.rsi < row.rsi ? prev.rsi : null;
+    const previewStateAgeBars = stateBar == null ? 0 : index - stateBar;
+    const previewTrap = trapCode(row.rsi, noiseState);
+    const previewSemanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, previewTrap, buyConverging, sellConverging, row.rsi, row.ema, row.wma, previewStateAgeBars);
+    const switchToBuyI = belowBoth && linesExpanding && barssince(wmaCrossDownFlags, index) > 1 && (side !== 1 || point !== 1);
+    const switchToSellI = aboveBoth && linesExpanding && barssince(wmaCrossUpFlags, index) > 1 && (side !== -1 || point !== 1);
+    const buyIIEvent = buyPointsAllowed && side === 1 && point === 1 && buyConverging && (rsiTroughVal != null || spreadShrinking);
+    const sellIIEvent = sellPointsAllowed && side === -1 && point === 1 && sellConverging && (rsiPeakVal != null || spreadShrinking);
+    const buy1Event = buyPointsAllowed && side === 1 && point === 2 && emaCrossUp && row.rsi < row.wma && !noiseState;
+    const sell1Event = sellPointsAllowed && side === -1 && point === 2 && emaCrossDown && row.rsi > row.wma && !noiseState;
+    const buy2DirectFromI = buyPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && index > (stateBar ?? -1) && row.rsi > row.ema && row.rsi < row.wma && !noiseState;
+    const sell2DirectFromI = sellPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState;
+    const buy2Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && row.rsi > row.ema && row.rsi < row.wma && !noiseState && point >= 3;
+    const sell2Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState && point >= 3;
+    const buy2SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_2 && semanticState !== SEM.BUY_2 && index > (stateBar ?? -1) && !noiseState;
+    const sell2SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_2 && semanticState !== SEM.SELL_2 && index > (stateBar ?? -1) && !noiseState;
+    buy2Condition[index] = buy2Candidate || buy2SemanticCandidate;
+    sell2Condition[index] = sell2Candidate || sell2SemanticCandidate;
+    const buy2Event = freshAt(buy2Condition, index) || buy2DirectFromI;
+    const sell2Event = freshAt(sell2Condition, index) || sell2DirectFromI;
+    const buy3DirectFromII = buyPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && buyIIEvent && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3DirectFromII = sellPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && sellIIEvent && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3WindowFromII = buyPointsAllowed && side === 1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossUpFlags, index) >= 0 && barssince(wmaCrossUpFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3WindowFromII = sellPointsAllowed && side === -1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossDownFlags, index) >= 0 && barssince(wmaCrossDownFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3Impulse = buyPointsAllowed && side === 1 && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3Impulse = sellPointsAllowed && side === -1 && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && !noiseState && (point >= 3 && wmaCrossUp || buy3WindowFromII);
+    const sell3Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && !noiseState && (point >= 3 && wmaCrossDown || sell3WindowFromII);
+    const buy3SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_3 && semanticState !== SEM.BUY_3 && index > (stateBar ?? -1) && !noiseState;
+    const sell3SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_3 && semanticState !== SEM.SELL_3 && index > (stateBar ?? -1) && !noiseState;
+    buy3Condition[index] = buy3Candidate || buy3SemanticCandidate;
+    sell3Condition[index] = sell3Candidate || sell3SemanticCandidate;
+    const buy3Event = freshAt(buy3Condition, index) || buy3DirectFromII || buy3Impulse;
+    const sell3Event = freshAt(sell3Condition, index) || sell3DirectFromII || sell3Impulse;
+
+    if (side === 0) {
+      if (buy3Impulse) { side = 1; point = 5; stateBar = index; }
+      else if (sell3Impulse) { side = -1; point = 5; stateBar = index; }
+      else if (belowBoth) { side = 1; point = 1; stateBar = index; }
+      else if (aboveBoth) { side = -1; point = 1; stateBar = index; }
+    } else if (switchToSellI) {
+      side = -1; point = 1; stateBar = index;
+    } else if (switchToBuyI) {
+      side = 1; point = 1; stateBar = index;
+    } else if (buy3Impulse || sell3Impulse || buy3DirectFromII || sell3DirectFromII || buy3Event || sell3Event) {
+      point = 5; stateBar = index;
+    } else if (buyIIEvent || sellIIEvent) {
+      point = 2; stateBar = index;
+    } else if (buy1Event || sell1Event) {
+      point = 3; stateBar = index;
+    } else if (buy2Event || sell2Event) {
+      point = 4; stateBar = index;
+    }
+
+    const trap = trapCode(row.rsi, noiseState);
+    const stateAgeBars = stateBar == null ? 0 : index - stateBar;
+    semanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, trap, buyConverging, sellConverging, row.rsi, row.ema, row.wma, stateAgeBars);
+    const triggerCode = buy2Event ? 4 : buy3Event ? 5 : sell2Event ? -4 : sell3Event ? -5 : 0;
+    packs.push({
+      time: candle.time,
+      index,
+      side,
+      point,
+      bias: semanticBiasCode(semanticState),
+      triggerCode,
+      triggerTime: triggerCode ? candle.time : null,
+      longStop: lowest(candles, index, STRATEGY_CONFIG.setupStopLookback),
+      shortStop: highest(candles, index, STRATEGY_CONFIG.setupStopLookback),
+      trap,
+      semanticState,
+      rsi: row.rsi,
+      ema: row.ema,
+      wma: row.wma
+    });
+  }
+
+  return packs;
+}
+
+function alignPackByTime(packs, time) {
+  let result = null;
+  for (const pack of packs) {
+    if (!pack) continue;
+    if (pack.time > time) break;
+    result = pack;
+  }
+  return result;
+}
+
+function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
+  const h4Packs = computeFramePacks(h4Candles);
+  const h12Packs = computeFramePacks(h12Candles);
+  const d1Packs = computeFramePacks(d1Candles);
+  const d2Packs = computeFramePacks(d2Candles);
+  const orders = [];
+  let positionSide = 0;
+  let positionStop = null;
+  let thesisFrameLevel = 0;
+  let thesisRequiredTier = 0;
+  let thesisBrokenBars = 0;
+  let pendingReverseSide = 0;
+  let pendingReverseIndex = null;
+  let lastExitIndex = null;
+  let lastNonConsensusExitIndex = null;
+  let lastNonConsensusExitTime = null;
+  let lastProcessedH12TriggerTime = null;
+
+  for (let index = 0; index < h4Candles.length; index += 1) {
+    const candle = h4Candles[index];
+    const current = h4Packs[index];
+    const h12 = alignPackByTime(h12Packs, candle.time);
+    const d1 = alignPackByTime(d1Packs, candle.time);
+    const d2 = alignPackByTime(d2Packs, candle.time);
+    if (!current || !h12 || !d1 || !d2) continue;
+
+    if (positionSide === 1 && positionStop != null && candle.low <= positionStop) {
+      orders.push({ time: candle.time, position: "aboveBar", color: "#ff6b6b", shape: "arrowDown", text: "SL", action: "exit", price: positionStop, detail: "Setup SL", size: 1 });
+      positionSide = 0; positionStop = null; thesisFrameLevel = 0; thesisRequiredTier = 0; thesisBrokenBars = 0; lastExitIndex = index;
+    } else if (positionSide === -1 && positionStop != null && candle.high >= positionStop) {
+      orders.push({ time: candle.time, position: "belowBar", color: "#4caf50", shape: "arrowUp", text: "SL", action: "exit", price: positionStop, detail: "Setup SL", size: 1 });
+      positionSide = 0; positionStop = null; thesisFrameLevel = 0; thesisRequiredTier = 0; thesisBrokenBars = 0; lastExitIndex = index;
+    }
+
+    if (pendingReverseSide && pendingReverseIndex != null && index > pendingReverseIndex + 1) {
+      pendingReverseSide = 0;
+      pendingReverseIndex = null;
+    }
+
+    const h12TriggerFresh = h12.triggerTime != null && h12.triggerTime !== h12Packs.find((pack) => pack?.time === h12.time - 12 * 60 * 60)?.triggerTime;
+    const h12TriggerSide = h12.triggerCode > 0 ? 1 : h12.triggerCode < 0 ? -1 : 0;
+    const h12RawUsableTrigger = h12.triggerCode !== 0 && h12TriggerSide !== 0 && h12.triggerTime !== lastProcessedH12TriggerTime && h12TriggerFresh;
+    const currentTriggerSide = current.triggerCode > 0 ? 1 : current.triggerCode < 0 ? -1 : 0;
+    const currentUsableTrigger = currentTriggerSide !== 0;
+    const bothTriggerConflict = h12RawUsableTrigger && currentUsableTrigger && h12TriggerSide === -currentTriggerSide;
+    const preferH12 = h12RawUsableTrigger && !currentUsableTrigger;
+    const triggerCode = bothTriggerConflict ? 0 : preferH12 ? h12.triggerCode : currentUsableTrigger ? current.triggerCode : h12RawUsableTrigger ? h12.triggerCode : 0;
+    const triggerSide = triggerCode > 0 ? 1 : triggerCode < 0 ? -1 : 0;
+    const triggerTf = triggerCode === 0 ? "none" : currentUsableTrigger ? "H4" : h12RawUsableTrigger ? "H12" : "none";
+    const triggerLane = triggerTf === "H12" ? "swing" : "early";
+    const triggerStop = triggerSide === 1 ? current.longStop : triggerSide === -1 ? current.shortStop : null;
+    const triggerText = bothTriggerConflict ? "H4/H12 conflict" : triggerLabel(triggerTf, triggerLane, triggerSide, triggerCode);
+    const otherSemanticState = preferH12 ? current.semanticState : h12.semanticState;
+    const otherSide = semanticFamilySide(otherSemanticState);
+    const otherTriggerTier = semanticTriggerTier(otherSemanticState);
+    const oppositeOther = triggerSide !== 0 && otherSide === -triggerSide;
+    const readinessAllowsEarlyCounter = true;
+    const h12ReadinessSoftCounter = triggerTf === "H4" && oppositeOther && readinessAllowsEarlyCounter;
+    const weakCounter = oppositeOther && (otherTriggerTier === 1 || h12ReadinessSoftCounter);
+    const strongConflict = bothTriggerConflict || (oppositeOther && otherTriggerTier >= 2 && !h12ReadinessSoftCounter);
+    const d2Regime = regimeState(triggerSide, d2.bias, d2.trap);
+    const h12TrapAgainstTrigger = triggerTf === "H12" && ((triggerSide === -1 && h12.trap === 1) || (triggerSide === 1 && h12.trap === -1));
+    const currentTrapAgainstTrigger = triggerTf === "H4" && ((triggerSide === -1 && current.trap === 1) || (triggerSide === 1 && current.trap === -1));
+    const triggerTrapWait = h12TrapAgainstTrigger || currentTrapAgainstTrigger;
+    const hasTrigger = h12RawUsableTrigger || currentUsableTrigger;
+    const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
+    const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
+    const h4D2Override = triggerTf === "H4" && hasTrigger && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
+    const entryModePreQuality = h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
+    const preQualityActionable = entryModePreQuality === "PARTIAL ONLY" || entryModePreQuality === "FULL ENTRY";
+    const riskPerUnit = triggerSide === 1 && triggerStop != null ? candle.close - triggerStop : triggerSide === -1 && triggerStop != null ? triggerStop - candle.close : null;
+    const validTriggerStop = preQualityActionable && riskPerUnit != null && riskPerUnit > 0;
+    const triggerSlPct = validTriggerStop ? riskPerUnit / candle.close * 100 : null;
+    const slQualityOk = validTriggerStop && triggerSlPct >= STRATEGY_CONFIG.minSlPct && triggerSlPct <= STRATEGY_CONFIG.maxSlPct;
+    const triggerTfScore = triggerTf === "H12" ? 2 : triggerTf === "H4" ? 1 : 0;
+    const d2QualityScore = d2Regime === "D2_SUPPORT" ? 2 : d2Regime === "D2_NEUTRAL" || h4D2Override ? 1 : 0;
+    const mtfQualityScore = weakCounter ? 0 : 1;
+    const slQualityScore = slQualityOk ? 1 : 0;
+    const triggerQualityScore = triggerTfScore + d2QualityScore + mtfQualityScore + slQualityScore;
+    const qualityOk = preQualityActionable && validTriggerStop && triggerQualityScore >= STRATEGY_CONFIG.minQualityScore;
+    const qualityGap = STRATEGY_CONFIG.minQualityScore - triggerQualityScore;
+    const softLowQualitySetup = preQualityActionable && validTriggerStop && STRATEGY_CONFIG.allowSoftLowQualityProbe && !qualityOk && qualityGap > 0 && qualityGap <= STRATEGY_CONFIG.softQualityBuffer && (Math.abs(triggerCode) === 5 || triggerTf === "H12" || triggerTf === "H4") && !strongConflict && !triggerTrapWait;
+    const entryMode = qualityOk ? entryModePreQuality : softLowQualitySetup ? "PARTIAL ONLY" : "NO-TRADE";
+    const actionableEntry = entryMode === "PARTIAL ONLY" || entryMode === "FULL ENTRY";
+
+    if (positionSide !== 0 && thesisFrameLevel < 2 && semanticFamilySide(h12.semanticState) === positionSide && semanticTriggerTier(h12.semanticState) >= 2) {
+      thesisFrameLevel = 2;
+      thesisRequiredTier = Math.max(thesisRequiredTier, 2);
+    }
+    if (positionSide !== 0 && thesisFrameLevel === 2 && semanticFamilySide(d1.semanticState) === positionSide && semanticTriggerTier(d1.semanticState) >= 2) {
+      thesisFrameLevel = 3;
+      thesisRequiredTier = Math.max(thesisRequiredTier, 2);
+    }
+    const thesisState = thesisFrameLevel === 3 ? d1.semanticState : thesisFrameLevel === 2 ? h12.semanticState : thesisFrameLevel === 1 ? current.semanticState : SEM.INIT;
+    const thesisSide = thesisFrameLevel === 3 ? semanticFamilySide(d1.semanticState) : thesisFrameLevel === 2 ? semanticFamilySide(h12.semanticState) : thesisFrameLevel === 1 ? semanticFamilySide(current.semanticState) : 0;
+    const thesisTier = thesisFrameLevel === 3 ? semanticTriggerTier(d1.semanticState) : thesisFrameLevel === 2 ? semanticTriggerTier(h12.semanticState) : thesisFrameLevel === 1 ? semanticTriggerTier(current.semanticState) : 0;
+    const thesisFamilyBroken = thesisFrameLevel <= 1
+      ? positionSide === 1 ? [SEM.SELL_2, SEM.SELL_3].includes(thesisState) : positionSide === -1 ? [SEM.BUY_2, SEM.BUY_3].includes(thesisState) : false
+      : positionSide === 1 ? [SEM.SELL_1, SEM.SELL_2, SEM.SELL_3].includes(thesisState) : positionSide === -1 ? [SEM.BUY_1, SEM.BUY_2, SEM.BUY_3].includes(thesisState) : false;
+    const thesisStrengthBroken = positionSide !== 0 && thesisFrameLevel > 0 && thesisSide === positionSide && thesisRequiredTier > 0 && thesisTier < thesisRequiredTier;
+    const thesisBrokenSignal = thesisFamilyBroken || thesisStrengthBroken;
+    thesisBrokenBars = positionSide !== 0 && thesisBrokenSignal ? thesisBrokenBars + 1 : 0;
+    const thesisBreakRequiredBars = thesisFrameLevel === 3 ? 12 : thesisFrameLevel === 2 ? 3 : 2;
+    const thesisBrokenConfirmed = thesisBrokenSignal && thesisBrokenBars >= thesisBreakRequiredBars;
+    const thesisBrokenReason = thesisFamilyBroken ? (thesisFrameLevel === 3 ? "d1_thesis_broken" : thesisFrameLevel === 2 ? "h12_thesis_broken" : "h4_thesis_broken") : thesisStrengthBroken ? (thesisFrameLevel === 3 ? "d1_thesis_lost_tier" : thesisFrameLevel === 2 ? "h12_thesis_lost_tier" : "h4_thesis_lost_tier") : "-";
+    const oppositePosition = positionSide !== 0 && triggerSide === -positionSide;
+    const reverseAllowedByThesis = thesisFrameLevel <= 1 ? triggerTf === "H4" || triggerTf === "H12" : thesisFrameLevel === 2 ? triggerTf === "H12" : false;
+    const reverseActionableSignal = actionableEntry && triggerSide !== 0 && oppositePosition && thesisBrokenConfirmed && reverseAllowedByThesis;
+    const nonConsensusExit = positionSide !== 0 && thesisBrokenConfirmed && !reverseActionableSignal;
+
+    if (reverseActionableSignal) {
+      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `REV ${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`, action: "exit", price: candle.close, detail: `reverse_prepare_${triggerText}`, size: 1 });
+      pendingReverseSide = triggerSide;
+      pendingReverseIndex = index;
+      lastExitIndex = index;
+      positionSide = 0;
+      positionStop = null;
+      continue;
+    }
+
+    if (nonConsensusExit) {
+      orders.push({ time: candle.time, position: positionSide === 1 ? "aboveBar" : "belowBar", color: "#ff6b6b", shape: positionSide === 1 ? "arrowDown" : "arrowUp", text: "OUT", action: "exit", price: candle.close, detail: `non_consensus_${thesisBrokenReason}`, size: 1 });
+      lastNonConsensusExitIndex = index;
+      lastNonConsensusExitTime = candle.time;
+      lastExitIndex = index;
+      positionSide = 0;
+      positionStop = null;
+      thesisFrameLevel = 0;
+      thesisRequiredTier = 0;
+      thesisBrokenBars = 0;
+      continue;
+    }
+
+    const entryCooldownOk = lastExitIndex == null || index > lastExitIndex + 1;
+    const nonConsensusCooldownOk = lastNonConsensusExitIndex == null || index > lastNonConsensusExitIndex + 3;
+    const freshAfterNonConsensus = lastNonConsensusExitTime == null || (triggerTf === "H12" ? h12.triggerTime : candle.time) > lastNonConsensusExitTime;
+    const reverseNextBarValid = pendingReverseSide !== 0 && pendingReverseIndex != null && index === pendingReverseIndex + 1 && actionableEntry && triggerSide === pendingReverseSide;
+    const effectiveEntryCooldownOk = entryCooldownOk || reverseNextBarValid;
+    const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus;
+    const h4OriginFlowBlocked = positionSide === 0 && triggerTf === "H12" && actionableEntry;
+    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && positionSide === 0;
+
+    if (flatEntryReady) {
+      const code = `${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`;
+      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `${triggerSide === 1 ? "L" : "S"} ${code}`, action: "entry", price: candle.close, detail: `${entryMode} ${triggerText}`, size: 1 });
+      positionSide = triggerSide;
+      positionStop = triggerStop;
+      thesisFrameLevel = 1;
+      thesisRequiredTier = 2;
+      thesisBrokenBars = 0;
+      pendingReverseSide = 0;
+      pendingReverseIndex = null;
+      if (triggerTf === "H12") lastProcessedH12TriggerTime = h12.triggerTime;
+    }
+  }
+
+  return { orders, status: { ready: true } };
+}
+
 function latestRsiRow(rsiData, rsiEmaData, rsiWmaData) {
   const rows = alignedRsiRows(rsiData, rsiEmaData, rsiWmaData);
   return rows.length ? rows[rows.length - 1] : null;
@@ -1331,6 +1707,7 @@ class MarketPanel {
     this.el = document.querySelector(`[data-frame="${config.key}"]`);
     this.rawCandles = [];
     this.candles = [];
+    this.parityCandles = { h4: [], h12: [], d1: [], d2: [] };
     this.ws = null;
     this.closeEl = this.el.querySelector('[data-role="close"]');
     this.priceNode = this.el.querySelector('[data-role="price-chart"]');
@@ -1387,6 +1764,10 @@ class MarketPanel {
 
   klineUrl() {
     return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
+  }
+
+  parityKlineUrl(interval, limit = 900) {
+    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${interval}&limit=${limit}`;
   }
 
   refreshCandles() {
@@ -1766,6 +2147,10 @@ class SingleFramePanel {
     return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
   }
 
+  parityKlineUrl(interval, limit = 900) {
+    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${interval}&limit=${limit}`;
+  }
+
   refreshCandles() {
     this.candles = aggregateCandles(this.rawCandles, this.config.aggregate);
   }
@@ -1790,10 +2175,31 @@ class SingleFramePanel {
     const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
 
-    const raw = await response.json();
+    const [raw, h4Raw, h12Raw, d1Raw] = await Promise.all([
+      response.json(),
+      fetch(this.parityKlineUrl("4h", 900)).then((res) => {
+        if (!res.ok) throw new Error(`H4 parity HTTP ${res.status}`);
+        return res.json();
+      }),
+      fetch(this.parityKlineUrl("12h", 900)).then((res) => {
+        if (!res.ok) throw new Error(`H12 parity HTTP ${res.status}`);
+        return res.json();
+      }),
+      fetch(this.parityKlineUrl("1d", 900)).then((res) => {
+        if (!res.ok) throw new Error(`D1 parity HTTP ${res.status}`);
+        return res.json();
+      })
+    ]);
     if (session !== singleSessionId) return;
 
     this.rawCandles = raw.map(toChartCandle);
+    const d1Candles = d1Raw.map(toChartCandle);
+    this.parityCandles = {
+      h4: h4Raw.map(toChartCandle),
+      h12: h12Raw.map(toChartCandle),
+      d1: d1Candles,
+      d2: aggregateCandles(d1Candles, 2)
+    };
     this.refreshCandles();
     this.draw(true);
     this.startWebSocket(session);
@@ -1818,11 +2224,21 @@ class SingleFramePanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const strategyCore = computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData);
-    if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, strategyCore.orders);
+    const parityCore = this.config.key === "h4" && this.parityCandles.h4.length && this.parityCandles.h12.length && this.parityCandles.d1.length && this.parityCandles.d2.length
+      ? computeV17ParityEvents(this.parityCandles.h4, this.parityCandles.h12, this.parityCandles.d1, this.parityCandles.d2)
+      : null;
+    const orderSource = parityCore ? parityCore.orders : strategyCore.orders;
+    if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, orderSource);
     const signalMarkers = strategyCore.markers;
-    const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? strategyCore.orders.filter((order) => order.action === "entry").at(-1) : null;
+    const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? orderSource.filter((order) => order.action === "entry").at(-1) : null;
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
-    const strategy = !STRATEGY_PARITY_READY && SHOW_DRAFT_STRATEGY_ORDERS
+    const strategy = parityCore
+      ? {
+          tone: latestEntry ? latestEntry.position === "belowBar" ? "buy" : "sell" : "wait",
+          label: "V17 WIP",
+          detail: latestEntry ? `Parity port: ${latestEntry.detail || latestEntry.text}` : "Porting RCStrV17 orders"
+        }
+      : !STRATEGY_PARITY_READY && SHOW_DRAFT_STRATEGY_ORDERS
       ? {
           tone: latestEntry ? latestEntry.position === "belowBar" ? "buy" : "sell" : "wait",
           label: "APPROX",
@@ -1862,7 +2278,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.signals ? strategyCore.orders : []);
+    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.signals ? orderSource : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);

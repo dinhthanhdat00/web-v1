@@ -474,10 +474,28 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
     }
 
     if (positionSide === 1 && positionStop != null && candle.low <= positionStop) {
+      orders.push({
+        time: candle.time,
+        position: "aboveBar",
+        color: "#ff6b6b",
+        shape: "arrowDown",
+        text: "EXIT SL",
+        action: "exit",
+        size: 2
+      });
       positionSide = 0;
       positionStop = null;
       lastExitIndex = index;
     } else if (positionSide === -1 && positionStop != null && candle.high >= positionStop) {
+      orders.push({
+        time: candle.time,
+        position: "belowBar",
+        color: "#4caf50",
+        shape: "arrowUp",
+        text: "EXIT SL",
+        action: "exit",
+        size: 2
+      });
       positionSide = 0;
       positionStop = null;
       lastExitIndex = index;
@@ -579,7 +597,7 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
           color: isLong ? "#304cff" : "#d000ff",
           shape: isLong ? "arrowUp" : "arrowDown",
           text: `reverse_prepare_H4/early/${Math.abs(triggerCode) === 4 ? "B2" : "B3"}`,
-          action: "reverse_prepare",
+          action: "exit",
           size: 2
         });
       } else if (flatEntryReady && isLong) {

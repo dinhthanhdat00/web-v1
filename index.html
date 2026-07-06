@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260707-compact-order-tags" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260707-trade-history" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -28,6 +28,7 @@
       <nav class="view-tabs" aria-label="Chart view">
         <button class="view-tab active" type="button" data-view="chart">Chart</button>
         <button class="view-tab" type="button" data-view="single">Single</button>
+        <button class="view-tab" type="button" data-view="trades">Trades</button>
         <button class="view-tab" type="button" data-view="rsi">RSI Only</button>
         <button class="view-tab" type="button" data-view="rules">RSI Rules</button>
       </nav>
@@ -186,6 +187,43 @@
         </section>
       </main>
 
+      <main id="tradesView" class="trades-view view-panel">
+        <section class="trades-shell">
+          <header class="trades-head">
+            <div>
+              <strong>Trade History</strong>
+              <span>Single strategy entries and exits saved on this browser.</span>
+            </div>
+            <button id="clearTradeHistory" class="trade-clear-btn" type="button">Clear</button>
+          </header>
+
+          <section class="trade-summary" aria-label="Trade history summary">
+            <div><span>Total</span><b data-role="trade-total">0</b></div>
+            <div><span>Entries</span><b data-role="trade-entries">0</b></div>
+            <div><span>Exits</span><b data-role="trade-exits">0</b></div>
+            <div><span>Latest</span><b data-role="trade-latest">--</b></div>
+          </section>
+
+          <div class="trade-table-wrap">
+            <table class="trade-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Time</th>
+                  <th>Symbol</th>
+                  <th>TF</th>
+                  <th>Type</th>
+                  <th>Tag</th>
+                  <th>Price</th>
+                  <th>Detail</th>
+                </tr>
+              </thead>
+              <tbody id="tradeHistoryRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
       <main id="rulesView" class="rules-view view-panel">
         <section class="rules-shell" data-rule-mode="two">
           <header class="rules-head">
@@ -339,6 +377,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260707-compact-order-tags"></script>
+  <script src="assets/js/app.js?v=20260707-trade-history"></script>
 </body>
 </html>

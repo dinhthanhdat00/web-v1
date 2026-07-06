@@ -127,6 +127,8 @@ const RSI_RULES = [
 
 const MANUAL_RULE_STORAGE_KEY = "manualRsiRuleConfig";
 const TWO_RULE_STORAGE_KEY = "twoRsiRuleConfig";
+const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryV1";
+const TRADE_HISTORY_LIMIT = 600;
 const MANUAL_TIMEFRAMES = ["2D", "1D", "H12", "H4", "2H", "1H"];
 const DEFAULT_MANUAL_RULE_CONFIG = {
   frames: ["1D", "H12", "H4"],
@@ -166,6 +168,112 @@ function formatTickTime(time) {
   }
 
   return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+function formatTradePrice(value) {
+  if (!Number.isFinite(value)) return "--";
+  return fmt.format(value);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[char]));
+}
+
+function tradeTypeLabel(order) {
+  if (order.action === "entry") return order.position === "belowBar" ? "Long entry" : "Short entry";
+  if (String(order.text || "").startsWith("REV")) return "Reverse out";
+  if (order.text === "SL") return "Stop out";
+  return "Exit";
+}
+
+function loadTradeHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TRADE_HISTORY_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveTradeHistory(items) {
+  localStorage.setItem(TRADE_HISTORY_STORAGE_KEY, JSON.stringify(items));
+}
+
+function normalizeTradeOrder(symbol, timeframe, order) {
+  const key = [symbol, timeframe, order.time, order.action, order.text, order.position].join("|");
+  return {
+    key,
+    time: order.time,
+    timeLabel: formatChartTime(order.time),
+    symbol,
+    timeframe,
+    type: tradeTypeLabel(order),
+    tag: order.text || "--",
+    price: Number.isFinite(order.price) ? order.price : null,
+    priceLabel: formatTradePrice(order.price),
+    detail: order.detail || order.text || "--",
+    action: order.action || "signal"
+  };
+}
+
+function renderTradeHistory() {
+  const rowsEl = $("tradeHistoryRows");
+  if (!rowsEl) return;
+
+  const history = loadTradeHistory().sort((a, b) => b.time - a.time);
+  rowsEl.innerHTML = history.length
+    ? history.map((item, index) => {
+        const tone = item.action === "entry" ? "entry" : "exit";
+        return `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(item.timeLabel)}</td>
+          <td>${escapeHtml(item.symbol)}</td>
+          <td>${escapeHtml(item.timeframe)}</td>
+          <td><span class="trade-type ${tone}">${escapeHtml(item.type)}</span></td>
+          <td><b class="trade-tag">${escapeHtml(item.tag)}</b></td>
+          <td>${escapeHtml(item.priceLabel)}</td>
+          <td>${escapeHtml(item.detail)}</td>
+        </tr>
+      `;
+      }).join("")
+    : `<tr><td class="trade-empty" colspan="8">No saved Single strategy orders yet.</td></tr>`;
+
+  const entryCount = history.filter((item) => item.action === "entry").length;
+  const exitCount = history.filter((item) => item.action === "exit").length;
+  const latest = history[0];
+  const totalEl = document.querySelector('[data-role="trade-total"]');
+  const entriesEl = document.querySelector('[data-role="trade-entries"]');
+  const exitsEl = document.querySelector('[data-role="trade-exits"]');
+  const latestEl = document.querySelector('[data-role="trade-latest"]');
+  if (totalEl) totalEl.textContent = String(history.length);
+  if (entriesEl) entriesEl.textContent = String(entryCount);
+  if (exitsEl) exitsEl.textContent = String(exitCount);
+  if (latestEl) latestEl.textContent = latest ? `${latest.tag} ${latest.timeframe}` : "--";
+}
+
+function mergeTradeHistory(symbol, timeframe, orders) {
+  const relevant = orders.filter((order) => order.action === "entry" || order.action === "exit");
+  if (!relevant.length) {
+    renderTradeHistory();
+    return;
+  }
+
+  const byKey = new Map(loadTradeHistory().map((item) => [item.key, item]));
+  relevant.forEach((order) => {
+    const item = normalizeTradeOrder(symbol, timeframe, order);
+    byKey.set(item.key, item);
+  });
+
+  const merged = Array.from(byKey.values()).sort((a, b) => b.time - a.time).slice(0, TRADE_HISTORY_LIMIT);
+  saveTradeHistory(merged);
+  renderTradeHistory();
 }
 
 function chartOptions(background = "#0d0d0d") {
@@ -481,6 +589,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
         shape: "arrowDown",
         text: "SL",
         action: "exit",
+        price: positionStop,
+        detail: "EXIT LONG SL",
         size: 1
       });
       positionSide = 0;
@@ -494,6 +604,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
         shape: "arrowUp",
         text: "SL",
         action: "exit",
+        price: positionStop,
+        detail: "EXIT SHORT SL",
         size: 1
       });
       positionSide = 0;
@@ -588,6 +700,7 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
       const reversePrepare = validStop && oppositePosition;
 
       if (reversePrepare) {
+        const code = Math.abs(triggerCode) === 4 ? "B2" : "B3";
         positionSide = 0;
         positionStop = null;
         lastExitIndex = index;
@@ -596,8 +709,10 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
           position: isLong ? "belowBar" : "aboveBar",
           color: isLong ? "#304cff" : "#d000ff",
           shape: isLong ? "arrowUp" : "arrowDown",
-          text: `REV ${Math.abs(triggerCode) === 4 ? "B2" : "B3"}`,
+          text: `REV ${code}`,
           action: "exit",
+          price: candle.close,
+          detail: `REVERSE OUT ${code}`,
           size: 1
         });
       } else if (flatEntryReady && isLong) {
@@ -610,6 +725,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
           shape: isLong ? "arrowUp" : "arrowDown",
           text: `L ${code}`,
           action: "entry",
+          price: candle.close,
+          detail: entryText,
           size: 1
         });
         positionSide = isLong ? 1 : -1;
@@ -1699,6 +1816,7 @@ class SingleFramePanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const strategyCore = computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData);
+    mergeTradeHistory(currentSymbol, this.config.label, strategyCore.orders);
     const signalMarkers = strategyCore.markers;
     const latestEntry = strategyCore.orders.filter((order) => order.action === "entry").at(-1);
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
@@ -2336,7 +2454,7 @@ function updateCurrentRule() {
 }
 
 function setActiveView(view, persist = true) {
-  const nextView = ["chart", "single", "rsi", "rules"].includes(view) ? view : "chart";
+  const nextView = ["chart", "single", "trades", "rsi", "rules"].includes(view) ? view : "chart";
   document.body.classList.toggle("rsi-view-active", nextView === "rsi");
   document.body.classList.toggle("single-view-active", nextView === "single");
   document.querySelectorAll(".view-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === nextView));
@@ -2393,6 +2511,15 @@ function boot() {
   renderManualRuleControls();
   renderThreeFrameCases();
   bindRuleModeTabs();
+  renderTradeHistory();
+
+  const clearTradeHistory = $("clearTradeHistory");
+  if (clearTradeHistory) {
+    clearTradeHistory.addEventListener("click", () => {
+      saveTradeHistory([]);
+      renderTradeHistory();
+    });
+  }
 
   document.querySelectorAll(".view-tab").forEach((button) => {
     button.addEventListener("click", () => {

@@ -848,6 +848,33 @@ function triggerLabel(tfName, lane, side, code) {
   return `${tfName}/${lane}/${side === 1 ? "B" : "S"}${Math.abs(code) === 4 ? "2" : "3"}`;
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function htfReadinessScore(rsiVal, emaVal, wmaVal, spreadVal, avgSpreadVal, betweenBothFlag) {
+  const baseSpread = Math.max(avgSpreadVal || 0, 0.00000001);
+  const relativeSpread = spreadVal / baseSpread;
+  const nearestMaDist = Math.min(Math.abs(rsiVal - emaVal), Math.abs(rsiVal - wmaVal));
+  const nearRatio = nearestMaDist / baseSpread;
+  const spreadScore = clamp(100 - Math.max(relativeSpread - 0.85, 0) * 90, 0, 100);
+  const bandScore = betweenBothFlag ? 100 : clamp(100 - nearRatio * 120, 0, 100);
+  return Math.round(spreadScore * 0.55 + bandScore * 0.45);
+}
+
+function htfReadinessCodeFromScore(score) {
+  return score >= 70 ? 1 : score >= 45 ? 2 : 3;
+}
+
+function thesisBreakBarsRequiredFromTime(time, targetSeconds, confirmBars) {
+  const currentSeconds = 4 * 60 * 60;
+  const barsPerTarget = Math.max(1, Math.ceil(targetSeconds / currentSeconds));
+  const targetOpen = Math.floor(time / targetSeconds) * targetSeconds;
+  const barsSinceTargetOpen = Math.floor((time - targetOpen) / currentSeconds);
+  const firstWindowBars = Math.max(1, barsPerTarget - barsSinceTargetOpen);
+  return confirmBars <= 1 ? firstWindowBars : firstWindowBars + (confirmBars - 1) * barsPerTarget;
+}
+
 function computeFramePacks(candles) {
   const rsiData = rsi(candles, params.rsiLength);
   const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
@@ -863,10 +890,12 @@ function computeFramePacks(candles) {
   const sell2Condition = [];
   const buy3Condition = [];
   const sell3Condition = [];
+  const spreadEma = [];
   let side = 0;
   let point = 0;
   let stateBar = null;
   let semanticState = SEM.INIT;
+  let prevSpreadEma = null;
 
   for (let index = 0; index < candles.length; index += 1) {
     const row = aligned[index];
@@ -882,6 +911,8 @@ function computeFramePacks(candles) {
 
     const prevSpread = Math.max(Math.abs(prev.rsi - prev.ema), Math.abs(prev.rsi - prev.wma), Math.abs(prev.ema - prev.wma));
     const spread = Math.max(Math.abs(row.rsi - row.ema), Math.abs(row.rsi - row.wma), Math.abs(row.ema - row.wma));
+    prevSpreadEma = prevSpreadEma == null ? spread : spread * (2 / (12 + 1)) + prevSpreadEma * (1 - (2 / (12 + 1)));
+    spreadEma[index] = prevSpreadEma;
     const aboveBoth = row.rsi > row.ema && row.rsi > row.wma;
     const belowBoth = row.rsi < row.ema && row.rsi < row.wma;
     const betweenBoth = !aboveBoth && !belowBoth;
@@ -964,6 +995,7 @@ function computeFramePacks(candles) {
     const stateAgeBars = stateBar == null ? 0 : index - stateBar;
     semanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, trap, buyConverging, sellConverging, row.rsi, row.ema, row.wma, stateAgeBars);
     const triggerCode = buy2Event ? 4 : buy3Event ? 5 : sell2Event ? -4 : sell3Event ? -5 : 0;
+    const readinessScore = htfReadinessScore(row.rsi, row.ema, row.wma, spread, spreadEma[index], betweenBoth);
     packs.push({
       time: candle.time,
       index,
@@ -978,7 +1010,9 @@ function computeFramePacks(candles) {
       semanticState,
       rsi: row.rsi,
       ema: row.ema,
-      wma: row.wma
+      wma: row.wma,
+      readinessScore,
+      readinessCode: htfReadinessCodeFromScore(readinessScore)
     });
   }
 
@@ -1012,6 +1046,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   let lastNonConsensusExitIndex = null;
   let lastNonConsensusExitTime = null;
   let lastProcessedH12TriggerTime = null;
+  let prevObservedH12TriggerTime = null;
 
   for (let index = 0; index < h4Candles.length; index += 1) {
     const candle = h4Candles[index];
@@ -1034,7 +1069,8 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       pendingReverseIndex = null;
     }
 
-    const h12TriggerFresh = h12.triggerTime != null && h12.triggerTime !== h12Packs.find((pack) => pack?.time === h12.time - 12 * 60 * 60)?.triggerTime;
+    const h12TriggerFresh = h12.triggerTime != null && h12.triggerTime !== prevObservedH12TriggerTime;
+    if (h12.triggerTime != null) prevObservedH12TriggerTime = h12.triggerTime;
     const h12TriggerSide = h12.triggerCode > 0 ? 1 : h12.triggerCode < 0 ? -1 : 0;
     const h12RawUsableTrigger = h12.triggerCode !== 0 && h12TriggerSide !== 0 && h12.triggerTime !== lastProcessedH12TriggerTime && h12TriggerFresh;
     const currentTriggerSide = current.triggerCode > 0 ? 1 : current.triggerCode < 0 ? -1 : 0;
@@ -1051,7 +1087,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const otherSide = semanticFamilySide(otherSemanticState);
     const otherTriggerTier = semanticTriggerTier(otherSemanticState);
     const oppositeOther = triggerSide !== 0 && otherSide === -triggerSide;
-    const readinessAllowsEarlyCounter = true;
+    const readinessAllowsEarlyCounter = h12.readinessCode === 1 || h12.readinessCode === 2;
     const h12ReadinessSoftCounter = triggerTf === "H4" && oppositeOther && readinessAllowsEarlyCounter;
     const weakCounter = oppositeOther && (otherTriggerTier === 1 || h12ReadinessSoftCounter);
     const strongConflict = bothTriggerConflict || (oppositeOther && otherTriggerTier >= 2 && !h12ReadinessSoftCounter);
@@ -1097,7 +1133,11 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const thesisStrengthBroken = positionSide !== 0 && thesisFrameLevel > 0 && thesisSide === positionSide && thesisRequiredTier > 0 && thesisTier < thesisRequiredTier;
     const thesisBrokenSignal = thesisFamilyBroken || thesisStrengthBroken;
     thesisBrokenBars = positionSide !== 0 && thesisBrokenSignal ? thesisBrokenBars + 1 : 0;
-    const thesisBreakRequiredBars = thesisFrameLevel === 3 ? 12 : thesisFrameLevel === 2 ? 3 : 2;
+    const thesisBreakRequiredBars = thesisFrameLevel === 3
+      ? thesisBreakBarsRequiredFromTime(candle.time, 24 * 60 * 60, 2)
+      : thesisFrameLevel === 2
+        ? thesisBreakBarsRequiredFromTime(candle.time, 12 * 60 * 60, 2)
+        : 2;
     const thesisBrokenConfirmed = thesisBrokenSignal && thesisBrokenBars >= thesisBreakRequiredBars;
     const thesisBrokenReason = thesisFamilyBroken ? (thesisFrameLevel === 3 ? "d1_thesis_broken" : thesisFrameLevel === 2 ? "h12_thesis_broken" : "h4_thesis_broken") : thesisStrengthBroken ? (thesisFrameLevel === 3 ? "d1_thesis_lost_tier" : thesisFrameLevel === 2 ? "h12_thesis_lost_tier" : "h4_thesis_lost_tier") : "-";
     const oppositePosition = positionSide !== 0 && triggerSide === -positionSide;
@@ -1764,10 +1804,6 @@ class MarketPanel {
 
   klineUrl() {
     return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
-  }
-
-  parityKlineUrl(interval, limit = 900) {
-    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${interval}&limit=${limit}`;
   }
 
   refreshCandles() {

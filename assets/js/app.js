@@ -458,6 +458,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
   let stateBar = null;
   let semanticState = SEM.INIT;
   let positionSide = 0;
+  let lastEntrySide = 0;
+  let lastEntryText = "No entry";
   let positionStop = null;
   let lastExitIndex = null;
 
@@ -577,19 +579,24 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
           color: isLong ? "#304cff" : "#d000ff",
           shape: isLong ? "arrowUp" : "arrowDown",
           text: `reverse_prepare_H4/early/${Math.abs(triggerCode) === 4 ? "B2" : "B3"}`,
+          action: "reverse_prepare",
           size: 2
         });
-      } else if (flatEntryReady) {
+      } else if (flatEntryReady && isLong) {
         const code = Math.abs(triggerCode) === 4 ? "B2" : "B3";
+        const entryText = `PARTIAL ONLY H4/early/${code}`;
         orders.push({
           time: candle.time,
           position: isLong ? "belowBar" : "aboveBar",
           color: isLong ? "#304cff" : "#d000ff",
           shape: isLong ? "arrowUp" : "arrowDown",
-          text: `PARTIAL ONLY H4/early/${code}`,
+          text: entryText,
+          action: "entry",
           size: 2
         });
         positionSide = isLong ? 1 : -1;
+        lastEntrySide = positionSide;
+        lastEntryText = entryText;
         positionStop = stop;
       }
     }
@@ -623,7 +630,15 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
     semanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, trapCode(row.rsi, noiseState), buyConverging, sellConverging, row.rsi, row.ema, row.wma, stateAgeBars);
   });
 
-  return { markers, orders };
+  return {
+    markers,
+    orders,
+    status: {
+      positionSide: positionSide || lastEntrySide,
+      lastEntrySide,
+      lastEntryText
+    }
+  };
 }
 
 function latestRsiRow(rsiData, rsiEmaData, rsiWmaData) {
@@ -1667,15 +1682,21 @@ class SingleFramePanel {
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const strategyCore = computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData);
     const signalMarkers = strategyCore.markers;
-    const latestOrder = strategyCore.orders.at(-1);
+    const latestEntry = strategyCore.orders.filter((order) => order.action === "entry").at(-1);
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
-    const strategy = latestOrder
+    const strategy = strategyCore.status.positionSide
       ? {
-          tone: latestOrder.position === "belowBar" ? "buy" : "sell",
-          label: latestOrder.position === "belowBar" ? "LONG" : "SHORT",
-          detail: latestOrder.text
+          tone: strategyCore.status.positionSide === 1 ? "buy" : "sell",
+          label: strategyCore.status.positionSide === 1 ? "LONG" : "SHORT",
+          detail: strategyCore.status.lastEntryText
         }
-      : singleStrategyFromSignal(rsiState, signalMarkers, rsiData, rsiEmaData, rsiWmaData);
+      : latestEntry
+        ? {
+            tone: latestEntry.position === "belowBar" ? "buy" : "sell",
+            label: latestEntry.position === "belowBar" ? "LONG" : "SHORT",
+            detail: latestEntry.text
+          }
+        : singleStrategyFromSignal(rsiState, signalMarkers, rsiData, rsiEmaData, rsiWmaData);
 
     this.candleSeries.setData(candles.map((candle) => {
       const signalColor = barColors.get(candle.time);

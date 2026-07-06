@@ -267,7 +267,8 @@ function mergeTradeHistory(symbol, timeframe, orders) {
     return;
   }
 
-  const byKey = new Map(loadTradeHistory().map((item) => [item.key, item]));
+  const existing = loadTradeHistory().filter((item) => item.symbol !== symbol || item.timeframe !== timeframe);
+  const byKey = new Map(existing.map((item) => [item.key, item]));
   relevant.forEach((order) => {
     const item = normalizeTradeOrder(symbol, timeframe, order);
     byKey.set(item.key, item);
@@ -479,6 +480,15 @@ const STRATEGY_CONFIG = {
   minQualityScore: 4,
   minSlPct: 0.20,
   maxSlPct: 8.00
+};
+
+const STRATEGY_INPUTS = {
+  enableH4SwingTrail: true,
+  h4SwingPivotBars: 50,
+  h4FormTrailLookback: 11,
+  h4SwingSlBuffer: 500,
+  h4SwingTrailAfterOneR: true,
+  useStructureConfirmedH4SwingTrail: true
 };
 
 const SEM = {
@@ -971,6 +981,13 @@ function computeFramePacks(candles) {
     sell3Condition[index] = sell3Candidate || sell3SemanticCandidate;
     const buy3Event = freshAt(buy3Condition, index) || buy3DirectFromII || buy3Impulse;
     const sell3Event = freshAt(sell3Condition, index) || sell3DirectFromII || sell3Impulse;
+    const buy2ClassicEvent = freshAt(buy2Condition, index);
+    const sell2ClassicEvent = freshAt(sell2Condition, index);
+    const buy3ClassicEvent = freshAt(buy3Condition, index);
+    const sell3ClassicEvent = freshAt(sell3Condition, index);
+    const entrySwingLookback = Math.max(2, STRATEGY_INPUTS.h4SwingPivotBars * 2 + 1);
+    const entryBufferedSwingLow = lowest(candles, index, entrySwingLookback) - STRATEGY_INPUTS.h4SwingSlBuffer;
+    const entryBufferedSwingHigh = highest(candles, index, entrySwingLookback) + STRATEGY_INPUTS.h4SwingSlBuffer;
 
     if (side === 0) {
       if (buy3Impulse) { side = 1; point = 5; stateBar = index; }
@@ -981,7 +998,11 @@ function computeFramePacks(candles) {
       side = -1; point = 1; stateBar = index;
     } else if (switchToBuyI) {
       side = 1; point = 1; stateBar = index;
-    } else if (buy3Impulse || sell3Impulse || buy3DirectFromII || sell3DirectFromII || buy3Event || sell3Event) {
+    } else if (buy3Impulse) {
+      side = 1; point = 5; stateBar = index;
+    } else if (sell3Impulse) {
+      side = -1; point = 5; stateBar = index;
+    } else if (buy3DirectFromII || sell3DirectFromII || buy3Event || sell3Event) {
       point = 5; stateBar = index;
     } else if (buyIIEvent || sellIIEvent) {
       point = 2; stateBar = index;
@@ -1006,6 +1027,12 @@ function computeFramePacks(candles) {
       triggerTime: triggerCode ? candle.time : null,
       longStop: lowest(candles, index, STRATEGY_CONFIG.setupStopLookback),
       shortStop: highest(candles, index, STRATEGY_CONFIG.setupStopLookback),
+      entryLongStop: STRATEGY_INPUTS.enableH4SwingTrail ? entryBufferedSwingLow : lowest(candles, index, STRATEGY_CONFIG.setupStopLookback),
+      entryShortStop: STRATEGY_INPUTS.enableH4SwingTrail ? entryBufferedSwingHigh : highest(candles, index, STRATEGY_CONFIG.setupStopLookback),
+      entryLongStopRef: STRATEGY_INPUTS.enableH4SwingTrail ? `H4SWING+${STRATEGY_INPUTS.h4SwingSlBuffer}` : "SETUP",
+      entryShortStopRef: STRATEGY_INPUTS.enableH4SwingTrail ? `H4SWING+${STRATEGY_INPUTS.h4SwingSlBuffer}` : "SETUP",
+      longTrailFormEvent: buy2ClassicEvent || buy3ClassicEvent,
+      shortTrailFormEvent: sell2ClassicEvent || sell3ClassicEvent,
       trap,
       semanticState,
       rsi: row.rsi,
@@ -1035,11 +1062,31 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const d1Packs = computeFramePacks(d1Candles);
   const d2Packs = computeFramePacks(d2Candles);
   const orders = [];
+  const initialEquity = 100000;
+  const partialRiskPct = 1.0;
+  const fullRiskPct = 2.0;
+  const maxLeverage = 1.0;
+  const capitalUsageCapPct = 50.0;
+  const maxOpenThesisLegs = 6;
+  let equity = initialEquity;
   let positionSide = 0;
-  let positionStop = null;
+  let positionQty = 0;
+  let positionAvgPrice = null;
+  let positionStopAnchor = null;
+  let positionActiveStop = null;
+  let positionTrailRef = "-";
+  let pendingStopAnchor = null;
+  let pendingTrailRef = "-";
+  let pendingRiskPct = null;
   let thesisFrameLevel = 0;
   let thesisRequiredTier = 0;
   let thesisBrokenBars = 0;
+  let postThesisBreakLockActive = false;
+  let postThesisBreakBlockedSide = 0;
+  let postThesisBreakFrameLevel = 0;
+  let confirmedFormLongLow = null;
+  let confirmedFormShortHigh = null;
+  let lastPositionEntryIndex = null;
   let pendingReverseSide = 0;
   let pendingReverseIndex = null;
   let lastExitIndex = null;
@@ -1047,6 +1094,50 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   let lastNonConsensusExitTime = null;
   let lastProcessedH12TriggerTime = null;
   let prevObservedH12TriggerTime = null;
+
+  function resetPositionState({ keepPostBreakLock = true } = {}) {
+    positionSide = 0;
+    positionQty = 0;
+    positionAvgPrice = null;
+    positionStopAnchor = null;
+    positionActiveStop = null;
+    positionTrailRef = "-";
+    pendingStopAnchor = null;
+    pendingTrailRef = "-";
+    pendingRiskPct = null;
+    thesisFrameLevel = 0;
+    thesisRequiredTier = 0;
+    thesisBrokenBars = 0;
+    confirmedFormLongLow = null;
+    confirmedFormShortHigh = null;
+    lastPositionEntryIndex = null;
+    if (!keepPostBreakLock) {
+      postThesisBreakLockActive = false;
+      postThesisBreakBlockedSide = 0;
+      postThesisBreakFrameLevel = 0;
+    }
+  }
+
+  function closePosition(index, price, detail, markerText = "OUT") {
+    const candle = h4Candles[index];
+    if (positionSide !== 0 && positionQty > 0 && positionAvgPrice != null) {
+      const gross = positionSide === 1 ? (price - positionAvgPrice) * positionQty : (positionAvgPrice - price) * positionQty;
+      equity += gross;
+    }
+    orders.push({
+      time: candle.time,
+      position: positionSide === 1 ? "aboveBar" : "belowBar",
+      color: "#ff6b6b",
+      shape: positionSide === 1 ? "arrowDown" : "arrowUp",
+      text: markerText,
+      action: "exit",
+      price,
+      detail,
+      size: 1
+    });
+    lastExitIndex = index;
+    resetPositionState();
+  }
 
   for (let index = 0; index < h4Candles.length; index += 1) {
     const candle = h4Candles[index];
@@ -1056,12 +1147,47 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const d2 = alignPackByTime(d2Packs, candle.time);
     if (!current || !h12 || !d1 || !d2) continue;
 
-    if (positionSide === 1 && positionStop != null && candle.low <= positionStop) {
-      orders.push({ time: candle.time, position: "aboveBar", color: "#ff6b6b", shape: "arrowDown", text: "SL", action: "exit", price: positionStop, detail: "Setup SL", size: 1 });
-      positionSide = 0; positionStop = null; thesisFrameLevel = 0; thesisRequiredTier = 0; thesisBrokenBars = 0; lastExitIndex = index;
-    } else if (positionSide === -1 && positionStop != null && candle.high >= positionStop) {
-      orders.push({ time: candle.time, position: "belowBar", color: "#4caf50", shape: "arrowUp", text: "SL", action: "exit", price: positionStop, detail: "Setup SL", size: 1 });
-      positionSide = 0; positionStop = null; thesisFrameLevel = 0; thesisRequiredTier = 0; thesisBrokenBars = 0; lastExitIndex = index;
+    if (positionSide === 1 && positionActiveStop != null && candle.low <= positionActiveStop) {
+      closePosition(index, positionActiveStop, positionTrailRef === "-" ? "Setup SL" : `${positionTrailRef} SL`, "SL");
+    } else if (positionSide === -1 && positionActiveStop != null && candle.high >= positionActiveStop) {
+      closePosition(index, positionActiveStop, positionTrailRef === "-" ? "Setup SL" : `${positionTrailRef} SL`, "SL");
+    }
+
+    if (positionSide !== 0 && positionStopAnchor != null && positionAvgPrice != null) {
+      const invalidLongStopAfterFill = positionSide === 1 && positionStopAnchor >= positionAvgPrice;
+      const invalidShortStopAfterFill = positionSide === -1 && positionStopAnchor <= positionAvgPrice;
+      if (invalidLongStopAfterFill || invalidShortStopAfterFill) {
+        closePosition(index, candle.close, "invalid_sl_fill", "INV SL");
+        continue;
+      }
+    }
+
+    const formTrailLookback = Math.max(STRATEGY_CONFIG.setupStopLookback, STRATEGY_INPUTS.h4FormTrailLookback);
+    if (positionSide === 1 && lastPositionEntryIndex != null && index > lastPositionEntryIndex && current.longTrailFormEvent) {
+      confirmedFormLongLow = lowest(h4Candles, index - 1, formTrailLookback);
+    }
+    if (positionSide === -1 && lastPositionEntryIndex != null && index > lastPositionEntryIndex && current.shortTrailFormEvent) {
+      confirmedFormShortHigh = highest(h4Candles, index - 1, formTrailLookback);
+    }
+    if (STRATEGY_INPUTS.enableH4SwingTrail && positionSide === 1 && positionActiveStop != null && confirmedFormLongLow != null) {
+      const activeLongSwingTrailStop = confirmedFormLongLow - STRATEGY_INPUTS.h4SwingSlBuffer;
+      const longInitialRisk = positionStopAnchor != null && positionAvgPrice != null ? positionAvgPrice - positionStopAnchor : null;
+      const longReachedOneR = longInitialRisk != null && longInitialRisk > 0 && candle.high >= positionAvgPrice + longInitialRisk;
+      const longSwingTrailReady = (!STRATEGY_INPUTS.h4SwingTrailAfterOneR || longReachedOneR) && activeLongSwingTrailStop < candle.close;
+      if (longSwingTrailReady && activeLongSwingTrailStop > positionActiveStop) {
+        positionActiveStop = activeLongSwingTrailStop;
+        positionTrailRef = `H4FORM+${STRATEGY_INPUTS.h4SwingSlBuffer}`;
+      }
+    }
+    if (STRATEGY_INPUTS.enableH4SwingTrail && positionSide === -1 && positionActiveStop != null && confirmedFormShortHigh != null) {
+      const activeShortSwingTrailStop = confirmedFormShortHigh + STRATEGY_INPUTS.h4SwingSlBuffer;
+      const shortInitialRisk = positionStopAnchor != null && positionAvgPrice != null ? positionStopAnchor - positionAvgPrice : null;
+      const shortReachedOneR = shortInitialRisk != null && shortInitialRisk > 0 && candle.low <= positionAvgPrice - shortInitialRisk;
+      const shortSwingTrailReady = (!STRATEGY_INPUTS.h4SwingTrailAfterOneR || shortReachedOneR) && activeShortSwingTrailStop > candle.close;
+      if (shortSwingTrailReady && activeShortSwingTrailStop < positionActiveStop) {
+        positionActiveStop = activeShortSwingTrailStop;
+        positionTrailRef = `H4FORM+${STRATEGY_INPUTS.h4SwingSlBuffer}`;
+      }
     }
 
     if (pendingReverseSide && pendingReverseIndex != null && index > pendingReverseIndex + 1) {
@@ -1081,7 +1207,8 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const triggerSide = triggerCode > 0 ? 1 : triggerCode < 0 ? -1 : 0;
     const triggerTf = triggerCode === 0 ? "none" : currentUsableTrigger ? "H4" : h12RawUsableTrigger ? "H12" : "none";
     const triggerLane = triggerTf === "H12" ? "swing" : "early";
-    const triggerStop = triggerSide === 1 ? current.longStop : triggerSide === -1 ? current.shortStop : null;
+    const triggerStop = triggerSide === 1 ? current.entryLongStop : triggerSide === -1 ? current.entryShortStop : null;
+    const triggerStopRef = triggerSide === 1 ? current.entryLongStopRef : triggerSide === -1 ? current.entryShortStopRef : "-";
     const triggerText = bothTriggerConflict ? "H4/H12 conflict" : triggerLabel(triggerTf, triggerLane, triggerSide, triggerCode);
     const otherSemanticState = preferH12 ? current.semanticState : h12.semanticState;
     const otherSide = semanticFamilySide(otherSemanticState);
@@ -1089,6 +1216,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const oppositeOther = triggerSide !== 0 && otherSide === -triggerSide;
     const readinessAllowsEarlyCounter = h12.readinessCode === 1 || h12.readinessCode === 2;
     const h12ReadinessSoftCounter = triggerTf === "H4" && oppositeOther && readinessAllowsEarlyCounter;
+    const h12ReadinessBlocked = triggerTf === "H4" && oppositeOther && !readinessAllowsEarlyCounter;
     const weakCounter = oppositeOther && (otherTriggerTier === 1 || h12ReadinessSoftCounter);
     const strongConflict = bothTriggerConflict || (oppositeOther && otherTriggerTier >= 2 && !h12ReadinessSoftCounter);
     const d2Regime = regimeState(triggerSide, d2.bias, d2.trap);
@@ -1099,7 +1227,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
     const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
     const h4D2Override = triggerTf === "H4" && hasTrigger && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
-    const entryModePreQuality = h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
+    const entryModePreQuality = h12ReadinessBlocked ? "NO-TRADE" : h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
     const preQualityActionable = entryModePreQuality === "PARTIAL ONLY" || entryModePreQuality === "FULL ENTRY";
     const riskPerUnit = triggerSide === 1 && triggerStop != null ? candle.close - triggerStop : triggerSide === -1 && triggerStop != null ? triggerStop - candle.close : null;
     const validTriggerStop = preQualityActionable && riskPerUnit != null && riskPerUnit > 0;
@@ -1146,25 +1274,23 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const nonConsensusExit = positionSide !== 0 && thesisBrokenConfirmed && !reverseActionableSignal;
 
     if (reverseActionableSignal) {
-      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `REV ${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`, action: "exit", price: candle.close, detail: `reverse_prepare_${triggerText}`, size: 1 });
+      closePosition(index, candle.close, `reverse_prepare_${triggerText}`, `REV ${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`);
       pendingReverseSide = triggerSide;
       pendingReverseIndex = index;
-      lastExitIndex = index;
-      positionSide = 0;
-      positionStop = null;
       continue;
     }
 
     if (nonConsensusExit) {
-      orders.push({ time: candle.time, position: positionSide === 1 ? "aboveBar" : "belowBar", color: "#ff6b6b", shape: positionSide === 1 ? "arrowDown" : "arrowUp", text: "OUT", action: "exit", price: candle.close, detail: `non_consensus_${thesisBrokenReason}`, size: 1 });
+      const postThesisBreakFamilyLock = thesisFrameLevel >= 2 && thesisFamilyBroken;
+      const exitSide = positionSide;
+      closePosition(index, candle.close, `non_consensus_${thesisBrokenReason}`, "OUT");
       lastNonConsensusExitIndex = index;
       lastNonConsensusExitTime = candle.time;
-      lastExitIndex = index;
-      positionSide = 0;
-      positionStop = null;
-      thesisFrameLevel = 0;
-      thesisRequiredTier = 0;
-      thesisBrokenBars = 0;
+      if (postThesisBreakFamilyLock) {
+        postThesisBreakLockActive = true;
+        postThesisBreakBlockedSide = exitSide;
+        postThesisBreakFrameLevel = thesisFrameLevel;
+      }
       continue;
     }
 
@@ -1175,18 +1301,42 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const effectiveEntryCooldownOk = entryCooldownOk || reverseNextBarValid;
     const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus;
     const h4OriginFlowBlocked = positionSide === 0 && triggerTf === "H12" && actionableEntry;
-    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && positionSide === 0;
+    const postThesisBreakSameSideBlocked = positionSide === 0 && postThesisBreakLockActive && actionableEntry && triggerSide === postThesisBreakBlockedSide;
+    const entryRiskPct = entryMode === "FULL ENTRY" ? fullRiskPct : entryMode === "PARTIAL ONLY" ? partialRiskPct : null;
+    const maxNotional = equity * maxLeverage;
+    const usableNotional = maxNotional * capitalUsageCapPct / 100;
+    const maxQty = usableNotional / candle.close;
+    const entryRiskAmount = entryRiskPct != null ? equity * entryRiskPct / 100 : null;
+    const entryQtyRaw = validTriggerStop && entryRiskAmount != null ? entryRiskAmount / riskPerUnit : null;
+    const entryQty = entryQtyRaw != null ? Math.min(entryQtyRaw, maxQty) : null;
+    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && !postThesisBreakSameSideBlocked && positionSide === 0 && entryQty != null && entryQty > 0;
 
     if (flatEntryReady) {
       const code = `${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`;
       orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `${triggerSide === 1 ? "L" : "S"} ${code}`, action: "entry", price: candle.close, detail: `${entryMode} ${triggerText}`, size: 1 });
       positionSide = triggerSide;
-      positionStop = triggerStop;
+      positionQty = entryQty;
+      positionAvgPrice = candle.close;
+      pendingStopAnchor = triggerStop;
+      pendingTrailRef = triggerStopRef;
+      pendingRiskPct = entryRiskPct;
+      positionStopAnchor = pendingStopAnchor;
+      positionActiveStop = pendingStopAnchor;
+      positionTrailRef = pendingTrailRef;
+      pendingStopAnchor = null;
+      pendingTrailRef = "-";
+      pendingRiskPct = null;
       thesisFrameLevel = 1;
       thesisRequiredTier = 2;
       thesisBrokenBars = 0;
+      lastPositionEntryIndex = index;
       pendingReverseSide = 0;
       pendingReverseIndex = null;
+      if (postThesisBreakLockActive && postThesisBreakBlockedSide !== triggerSide) {
+        postThesisBreakLockActive = false;
+        postThesisBreakBlockedSide = 0;
+        postThesisBreakFrameLevel = 0;
+      }
       if (triggerTf === "H12") lastProcessedH12TriggerTime = h12.triggerTime;
     }
   }
@@ -2264,6 +2414,24 @@ class SingleFramePanel {
       ? computeV17ParityEvents(this.parityCandles.h4, this.parityCandles.h12, this.parityCandles.d1, this.parityCandles.d2)
       : null;
     const orderSource = parityCore ? parityCore.orders : strategyCore.orders;
+    if (queryParams().has("debugStrategy")) {
+      window.__singleStrategyDebug = {
+        timeframe: this.config.label,
+        candles,
+        parityCandles: this.parityCandles,
+        parityCore,
+        strategyCore,
+        orderSource
+      };
+      document.body.dataset.singleOrdersDebug = JSON.stringify(orderSource.map((order) => ({
+        time: order.time,
+        text: order.text,
+        action: order.action,
+        price: order.price,
+        detail: order.detail,
+        position: order.position
+      })));
+    }
     if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, orderSource);
     const signalMarkers = strategyCore.markers;
     const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? orderSource.filter((order) => order.action === "entry").at(-1) : null;

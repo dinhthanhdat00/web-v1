@@ -127,8 +127,9 @@ const RSI_RULES = [
 
 const MANUAL_RULE_STORAGE_KEY = "manualRsiRuleConfig";
 const TWO_RULE_STORAGE_KEY = "twoRsiRuleConfig";
-const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryV1";
+const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryV2";
 const TRADE_HISTORY_LIMIT = 600;
+const STRATEGY_PARITY_READY = false;
 const MANUAL_TIMEFRAMES = ["2D", "1D", "H12", "H4", "2H", "1H"];
 const DEFAULT_MANUAL_RULE_CONFIG = {
   frames: ["1D", "H12", "H4"],
@@ -1816,11 +1817,17 @@ class SingleFramePanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const strategyCore = computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData);
-    mergeTradeHistory(currentSymbol, this.config.label, strategyCore.orders);
+    if (STRATEGY_PARITY_READY) mergeTradeHistory(currentSymbol, this.config.label, strategyCore.orders);
     const signalMarkers = strategyCore.markers;
-    const latestEntry = strategyCore.orders.filter((order) => order.action === "entry").at(-1);
+    const latestEntry = STRATEGY_PARITY_READY ? strategyCore.orders.filter((order) => order.action === "entry").at(-1) : null;
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
-    const strategy = strategyCore.status.positionSide
+    const strategy = !STRATEGY_PARITY_READY
+      ? {
+          tone: "wait",
+          label: "PENDING",
+          detail: "Full v17 parity not loaded"
+        }
+      : strategyCore.status.positionSide
       ? {
           tone: strategyCore.status.positionSide === 1 ? "buy" : "sell",
           label: strategyCore.status.positionSide === 1 ? "LONG" : "SHORT",
@@ -1848,7 +1855,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers(layerState.signals ? strategyCore.orders : []);
+    this.candleSeries.setMarkers(STRATEGY_PARITY_READY && layerState.signals ? strategyCore.orders : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);

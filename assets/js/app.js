@@ -1667,12 +1667,15 @@ class SingleFramePanel {
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const strategyCore = computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData);
     const signalMarkers = strategyCore.markers;
+    const latestOrder = strategyCore.orders.at(-1);
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
-    const strategy = {
-      tone: "wait",
-      label: "PENDING",
-      detail: "Full v17 parity not loaded"
-    };
+    const strategy = latestOrder
+      ? {
+          tone: latestOrder.position === "belowBar" ? "buy" : "sell",
+          label: latestOrder.position === "belowBar" ? "LONG" : "SHORT",
+          detail: latestOrder.text
+        }
+      : singleStrategyFromSignal(rsiState, signalMarkers, rsiData, rsiEmaData, rsiWmaData);
 
     this.candleSeries.setData(candles.map((candle) => {
       const signalColor = barColors.get(candle.time);
@@ -1688,7 +1691,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers([]);
+    this.candleSeries.setMarkers(layerState.signals ? strategyCore.orders : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);

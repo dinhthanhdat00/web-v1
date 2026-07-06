@@ -7,15 +7,24 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260707-trade-history" />
-  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260707-logo-refresh" />
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg?v=20260707-logo-refresh" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
 <body>
   <div class="market-app">
     <header class="market-topbar">
       <div class="brand">
-        <span class="coin-dot">B</span>
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" focusable="false">
+            <rect class="mark-bg" x="4" y="4" width="56" height="56" rx="14" />
+            <path class="mark-grid" d="M17 19H47M17 32H47M17 45H47M19 17V47M32 17V47M45 17V47" />
+            <path class="mark-candle mark-red" d="M22 19V41M18 25H26V36H18Z" />
+            <path class="mark-candle mark-light" d="M32 16V46M28 22H36V39H28Z" />
+            <path class="mark-candle mark-green" d="M42 18V43M38 24H46V34H38Z" />
+            <path class="mark-wave" d="M14 42C22 29 29 36 34 28C40 18 47 22 51 13" />
+          </svg>
+        </span>
         <span>CRYPTO MATRIX</span>
       </div>
 

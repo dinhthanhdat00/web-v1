@@ -56,23 +56,68 @@ body {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   color: var(--white);
   font-size: 13px;
   font-weight: 800;
 }
 
-.coin-dot {
+.brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #f7931a;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 900;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+}
+
+.brand-mark svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 0 5px rgba(47, 92, 255, 0.28));
+}
+
+.mark-bg {
+  fill: #121722;
+  stroke: #2b3448;
+  stroke-width: 2;
+}
+
+.mark-grid {
+  fill: none;
+  stroke: rgba(154, 164, 186, 0.34);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.mark-candle {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-width: 2.5;
+}
+
+.mark-red {
+  fill: #ff4d5a;
+  stroke: #ff8a92;
+}
+
+.mark-light {
+  fill: #d8deea;
+  stroke: #ffffff;
+}
+
+.mark-green {
+  fill: #4caf50;
+  stroke: #76e07c;
+}
+
+.mark-wave {
+  fill: none;
+  stroke: #2f5cff;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .symbol-form {

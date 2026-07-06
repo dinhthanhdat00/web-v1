@@ -127,9 +127,10 @@ const RSI_RULES = [
 
 const MANUAL_RULE_STORAGE_KEY = "manualRsiRuleConfig";
 const TWO_RULE_STORAGE_KEY = "twoRsiRuleConfig";
-const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryV2";
+const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryDraftV1";
 const TRADE_HISTORY_LIMIT = 600;
 const STRATEGY_PARITY_READY = false;
+const SHOW_DRAFT_STRATEGY_ORDERS = true;
 const MANUAL_TIMEFRAMES = ["2D", "1D", "H12", "H4", "2H", "1H"];
 const DEFAULT_MANUAL_RULE_CONFIG = {
   frames: ["1D", "H12", "H4"],
@@ -1817,11 +1818,17 @@ class SingleFramePanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const strategyCore = computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData);
-    if (STRATEGY_PARITY_READY) mergeTradeHistory(currentSymbol, this.config.label, strategyCore.orders);
+    if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, strategyCore.orders);
     const signalMarkers = strategyCore.markers;
-    const latestEntry = STRATEGY_PARITY_READY ? strategyCore.orders.filter((order) => order.action === "entry").at(-1) : null;
+    const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? strategyCore.orders.filter((order) => order.action === "entry").at(-1) : null;
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
-    const strategy = !STRATEGY_PARITY_READY
+    const strategy = !STRATEGY_PARITY_READY && SHOW_DRAFT_STRATEGY_ORDERS
+      ? {
+          tone: latestEntry ? latestEntry.position === "belowBar" ? "buy" : "sell" : "wait",
+          label: "APPROX",
+          detail: latestEntry ? `Draft orders: ${latestEntry.detail || latestEntry.text}` : "Draft JS orders, not v17 parity"
+        }
+      : !STRATEGY_PARITY_READY
       ? {
           tone: "wait",
           label: "PENDING",
@@ -1855,7 +1862,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers(STRATEGY_PARITY_READY && layerState.signals ? strategyCore.orders : []);
+    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.signals ? strategyCore.orders : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);

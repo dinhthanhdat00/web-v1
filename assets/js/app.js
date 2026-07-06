@@ -479,9 +479,9 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
         position: "aboveBar",
         color: "#ff6b6b",
         shape: "arrowDown",
-        text: "EXIT SL",
+        text: "SL",
         action: "exit",
-        size: 2
+        size: 1
       });
       positionSide = 0;
       positionStop = null;
@@ -492,9 +492,9 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
         position: "belowBar",
         color: "#4caf50",
         shape: "arrowUp",
-        text: "EXIT SL",
+        text: "SL",
         action: "exit",
-        size: 2
+        size: 1
       });
       positionSide = 0;
       positionStop = null;
@@ -596,9 +596,9 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
           position: isLong ? "belowBar" : "aboveBar",
           color: isLong ? "#304cff" : "#d000ff",
           shape: isLong ? "arrowUp" : "arrowDown",
-          text: `reverse_prepare_H4/early/${Math.abs(triggerCode) === 4 ? "B2" : "B3"}`,
+          text: `REV ${Math.abs(triggerCode) === 4 ? "B2" : "B3"}`,
           action: "exit",
-          size: 2
+          size: 1
         });
       } else if (flatEntryReady && isLong) {
         const code = Math.abs(triggerCode) === 4 ? "B2" : "B3";
@@ -608,9 +608,9 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
           position: isLong ? "belowBar" : "aboveBar",
           color: isLong ? "#304cff" : "#d000ff",
           shape: isLong ? "arrowUp" : "arrowDown",
-          text: entryText,
+          text: `L ${code}`,
           action: "entry",
-          size: 2
+          size: 1
         });
         positionSide = isLong ? 1 : -1;
         lastEntrySide = positionSide;

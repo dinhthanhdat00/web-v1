@@ -459,6 +459,68 @@ body {
   color: var(--gray-candle);
 }
 
+.single-strategy {
+  display: inline-grid;
+  grid-template-columns: auto auto minmax(120px, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 220px;
+  max-width: 390px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #2a3040;
+  border-radius: 4px;
+  background: #10141f;
+  color: #cfd6e6;
+  font-size: 11px;
+  overflow: hidden;
+}
+
+.single-strategy span {
+  color: #8f98ac;
+  font-weight: 800;
+}
+
+.single-strategy b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 3px;
+  color: #06080d;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.single-strategy em {
+  min-width: 0;
+  color: #a8afbf;
+  font-style: normal;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-strategy.buy b {
+  background: #4caf50;
+}
+
+.single-strategy.sell b {
+  background: #ff6b6b;
+}
+
+.single-strategy.hold b {
+  background: #42a5f5;
+}
+
+.single-strategy.wait b {
+  background: #ffd54f;
+}
+
 .single-tf-tabs {
   display: inline-flex;
   align-items: center;
@@ -1193,6 +1255,12 @@ body {
     width: 100%;
     justify-content: space-between;
     gap: 6px;
+  }
+
+  .single-strategy {
+    width: 100%;
+    max-width: none;
+    grid-template-columns: auto auto minmax(0, 1fr);
   }
 
   .single-tf-tabs {

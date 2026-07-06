@@ -352,6 +352,91 @@ function marker(time, text, color, position = "belowBar", shape = "circle") {
   return { time, text, color, position, shape, size: 1 };
 }
 
+function latestRsiRow(rsiData, rsiEmaData, rsiWmaData) {
+  const rows = alignedRsiRows(rsiData, rsiEmaData, rsiWmaData);
+  return rows.length ? rows[rows.length - 1] : null;
+}
+
+function singleStrategyFromSignal(rsiState, signalMarkers, rsiData, rsiEmaData, rsiWmaData) {
+  const recentTimes = new Set(rsiData.slice(-12).map((point) => point.time));
+  const recentEntry = signalMarkers
+    .filter((item) => recentTimes.has(item.time) && ["2", "3"].includes(String(item.text)))
+    .sort((a, b) => a.time - b.time)
+    .at(-1);
+  const recentSetup = signalMarkers
+    .filter((item) => recentTimes.has(item.time) && String(item.text) === "II")
+    .sort((a, b) => a.time - b.time)
+    .at(-1);
+  const last = latestRsiRow(rsiData, rsiEmaData, rsiWmaData);
+
+  if (recentEntry?.position === "belowBar") {
+    return {
+      tone: "buy",
+      label: "BUY",
+      detail: `${rsiState || "RSI up"} | signal ${recentEntry.text}`
+    };
+  }
+
+  if (recentEntry?.position === "aboveBar") {
+    return {
+      tone: "sell",
+      label: "SELL",
+      detail: `${rsiState || "RSI down"} | signal ${recentEntry.text}`
+    };
+  }
+
+  if (recentSetup?.position === "belowBar") {
+    return {
+      tone: "hold",
+      label: "WATCH L",
+      detail: `${rsiState || "Buy setup"} | wait 2/3`
+    };
+  }
+
+  if (recentSetup?.position === "aboveBar") {
+    return {
+      tone: "hold",
+      label: "WATCH S",
+      detail: `${rsiState || "Sell setup"} | wait 2/3`
+    };
+  }
+
+  if (last && last.rsi > last.ema && last.rsi > last.wma) {
+    return {
+      tone: "hold",
+      label: "HOLD L",
+      detail: `${rsiState || "RSI above EMA/WMA"} | no fresh entry`
+    };
+  }
+
+  if (last && last.rsi < last.ema && last.rsi < last.wma) {
+    return {
+      tone: "hold",
+      label: "HOLD S",
+      detail: `${rsiState || "RSI below EMA/WMA"} | no fresh entry`
+    };
+  }
+
+  return {
+    tone: "wait",
+    label: "WAIT",
+    detail: `${rsiState || "RSI mixed"} | no clean setup`
+  };
+}
+
+function strategyPriceMarkers(signalMarkers) {
+  return signalMarkers
+    .filter((item) => ["2", "3"].includes(String(item.text)))
+    .map((item) => ({
+      time: item.time,
+      position: item.position,
+      color: item.position === "belowBar" ? "#4caf50" : "#ff4d5a",
+      shape: item.position === "belowBar" ? "arrowUp" : "arrowDown",
+      text: item.position === "belowBar" ? `BUY ${item.text}` : `SELL ${item.text}`,
+      size: 1
+    }));
+}
+
 function rsiExtremeLineData(rsiData, predicate) {
   return rsiData.map((point, index) => {
     const prev = rsiData[index - 1];
@@ -1090,6 +1175,9 @@ class SingleFramePanel {
     this.symbolEl = document.querySelector('[data-role="single-symbol"]');
     this.priceEl = document.querySelector('[data-role="single-price"]');
     this.changeEl = document.querySelector('[data-role="single-change"]');
+    this.strategyEl = document.querySelector('[data-role="single-strategy"]');
+    this.strategyLabelEl = document.querySelector('[data-role="single-strategy-label"]');
+    this.strategyDetailEl = document.querySelector('[data-role="single-strategy-detail"]');
     this.shellNode = document.querySelector(".single-shell");
     this.priceNode = document.querySelector('[data-role="single-price-chart"]');
     this.rsiNode = document.querySelector('[data-role="single-rsi-chart"]');
@@ -1271,6 +1359,7 @@ class SingleFramePanel {
     this.priceEl.textContent = "--";
     this.changeEl.textContent = "--%";
     this.changeEl.className = "";
+    this.updateStrategyBadge({ tone: "wait", label: "WAIT", detail: "Loading RSI state" });
 
     const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
@@ -1282,6 +1371,13 @@ class SingleFramePanel {
     this.refreshCandles();
     this.draw(true);
     this.startWebSocket(session);
+  }
+
+  updateStrategyBadge(strategy) {
+    if (!this.strategyEl || !this.strategyLabelEl || !this.strategyDetailEl) return;
+    this.strategyEl.className = `single-strategy ${strategy.tone}`;
+    this.strategyLabelEl.textContent = strategy.label;
+    this.strategyDetailEl.textContent = strategy.detail;
   }
 
   draw(fit = false) {
@@ -1296,6 +1392,8 @@ class SingleFramePanel {
     const rsiEmaData = emaFromValues(rsiData, params.rsiEmaLength);
     const rsiWmaData = wmaFromValues(rsiData, params.rsiWmaLength);
     const signalMarkers = computeSignalMarkers(rsiData, rsiEmaData, rsiWmaData);
+    const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
+    const strategy = singleStrategyFromSignal(rsiState, signalMarkers, rsiData, rsiEmaData, rsiWmaData);
 
     this.candleSeries.setData(candles.map((candle) => {
       const signalColor = barColors.get(candle.time);
@@ -1311,6 +1409,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
+    this.candleSeries.setMarkers(layerState.signals ? strategyPriceMarkers(signalMarkers) : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
@@ -1333,6 +1432,7 @@ class SingleFramePanel {
     this.priceEl.textContent = `$${fmt.format(last.close)}`;
     this.changeEl.textContent = `${change >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
     this.changeEl.className = change >= 0 ? "up" : "down";
+    this.updateStrategyBadge(strategy);
 
     if (fit) this.focusLatest();
   }

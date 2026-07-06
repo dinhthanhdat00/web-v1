@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#0b0b0b" />
   <title>Crypto Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260627-rsi-rule-tabs" />
+  <link rel="stylesheet" href="assets/css/styles.css?v=20260707-single-strategy" />
   <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
@@ -173,6 +173,11 @@
               <span data-role="single-price">--</span>
               <span data-role="single-change">--%</span>
             </div>
+            <div class="single-strategy wait" data-role="single-strategy">
+              <span>Strategy</span>
+              <b data-role="single-strategy-label">WAIT</b>
+              <em data-role="single-strategy-detail">Loading RSI state</em>
+            </div>
             <nav id="singleTfButtons" class="single-tf-tabs" aria-label="Single timeframe"></nav>
           </header>
           <div class="single-price-chart" data-role="single-price-chart"></div>
@@ -334,6 +339,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260627-rsi-rule-tabs"></script>
+  <script src="assets/js/app.js?v=20260707-single-strategy"></script>
 </body>
 </html>

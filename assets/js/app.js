@@ -194,6 +194,23 @@ function tradeTypeLabel(order) {
   return "Exit";
 }
 
+function strategyOrderDisplayMarkers(orders) {
+  return orders.map((order) => {
+    const text = order.action === "entry"
+      ? String(order.text || "").startsWith("ADD") ? "ADD" : "IN"
+      : order.text === "SL" ? "SL" : "OUT";
+    const isLongEntry = order.action === "entry" && order.position === "belowBar";
+    const isShortEntry = order.action === "entry" && order.position === "aboveBar";
+    const isExit = order.action === "exit";
+    return {
+      ...order,
+      text,
+      size: isExit ? 2 : 1,
+      color: isExit ? "#ff4fd8" : isLongEntry ? "#3f5cff" : isShortEntry ? "#d000ff" : order.color
+    };
+  });
+}
+
 function loadTradeHistory() {
   try {
     const parsed = JSON.parse(localStorage.getItem(TRADE_HISTORY_STORAGE_KEY) || "[]");
@@ -2672,7 +2689,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.signals ? orderSource : []);
+    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.signals ? strategyOrderDisplayMarkers(orderSource) : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);

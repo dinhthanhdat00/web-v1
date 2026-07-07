@@ -1116,6 +1116,8 @@ function computeFramePacks(candles) {
       entryShortStopRef: STRATEGY_INPUTS.enableH4SwingTrail ? `H4SWING+${STRATEGY_INPUTS.h4SwingSlBuffer}` : "SETUP",
       longTrailFormEvent: buy2ClassicEvent || buy3ClassicEvent,
       shortTrailFormEvent: sell2ClassicEvent || sell3ClassicEvent,
+      buyIIEvent,
+      sellIIEvent,
       buy2ClassicEvent,
       sell2ClassicEvent,
       buy3ClassicEvent,
@@ -1164,6 +1166,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const d2Packs = computeFramePacks(d2Candles);
   const weeklyVwapByTime = valueMap(anchoredVwap(h4Candles, "W"));
   const orders = [];
+  const rsiMarkers = [];
   const statusHistory = [];
   const initialEquity = 100000;
   const partialRiskPct = STRATEGY_INPUTS.partialRiskPct;
@@ -1301,6 +1304,10 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       ...status
     };
     statusHistory.push(latestStatus);
+  }
+
+  function addRsiMarker(time, text, color, position, shape = "circle", size = 1) {
+    rsiMarkers.push({ time, text, color, position, shape, size });
   }
 
   for (let index = 0; index < h4Candles.length; index += 1) {
@@ -1454,6 +1461,20 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const softLowQualitySetup = preQualityActionable && validTriggerStop && STRATEGY_CONFIG.allowSoftLowQualityProbe && !qualityOk && qualityGap > 0 && qualityGap <= STRATEGY_CONFIG.softQualityBuffer && softQualityStructureOk && !strongConflict && !triggerTrapWait;
     const entryMode = qualityOk ? entryModePreQuality : softLowQualitySetup ? "PARTIAL ONLY" : "NO-TRADE";
     const actionableEntry = entryMode === "PARTIAL ONLY" || entryMode === "FULL ENTRY";
+    const fullSignalColor = entryMode === "FULL ENTRY";
+    if (current.buyIIEvent) addRsiMarker(candle.time, "II", "#40ff72", "belowBar", "circle");
+    if (current.sellIIEvent) addRsiMarker(candle.time, "II", "#ff9800", "aboveBar", "circle");
+    if (current.buy2ClassicEvent) addRsiMarker(candle.time, "2", fullSignalColor ? "#4caf50" : "rgba(76,175,80,0.55)", "belowBar", "square");
+    if (current.sell2ClassicEvent) addRsiMarker(candle.time, "2", fullSignalColor ? "#ff4d5a" : "rgba(255,77,90,0.55)", "aboveBar", "square");
+    if (current.buy3ClassicEvent) addRsiMarker(candle.time, "3", fullSignalColor ? "#4caf50" : "rgba(76,175,80,0.55)", "belowBar", "arrowUp");
+    if (current.sell3ClassicEvent) addRsiMarker(candle.time, "3", fullSignalColor ? "#ff4d5a" : "rgba(255,77,90,0.55)", "aboveBar", "arrowDown");
+    if (h12UsableTrigger && h12TriggerSide === 1) addRsiMarker(candle.time, "H12", "#304cff", "belowBar", "arrowUp");
+    if (h12UsableTrigger && h12TriggerSide === -1) addRsiMarker(candle.time, "H12", "#304cff", "aboveBar", "arrowDown");
+    if (strongConflict) addRsiMarker(candle.time, "MTF-X", "#ffe45c", current.rsi >= 50 ? "aboveBar" : "belowBar", "square");
+    const d2GateWait = hasTrigger && (d2Regime === "D2_TRAP" || (d2Regime === "D2_OPPOSE" && h12ReadinessBlocked));
+    if (d2GateWait) addRsiMarker(candle.time, "D2-G", "#ff9800", triggerSide === 1 ? "belowBar" : "aboveBar", "square");
+    if (positionSide > 0 && current.bias === 1 && current.rsi < current.wma) addRsiMarker(candle.time, "W!", "#ff9800", "aboveBar", "square");
+    if (positionSide < 0 && current.bias === -1 && current.rsi > current.wma) addRsiMarker(candle.time, "W!", "#ff9800", "belowBar", "square");
 
     let promotedToH12 = false;
     let promotedToD1 = false;
@@ -1788,7 +1809,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     }
   }
 
-  return { orders, status: { ready: true, latest: latestStatus, history: statusHistory } };
+  return { orders, rsiMarkers, status: { ready: true, latest: latestStatus, history: statusHistory } };
 }
 
 function latestRsiRow(rsiData, rsiEmaData, rsiWmaData) {
@@ -2862,6 +2883,7 @@ class SingleFramePanel {
       ? computeV17ParityEvents(this.parityCandles.h4, this.parityCandles.h12, this.parityCandles.d1, this.parityCandles.d2)
       : null;
     const orderSource = parityCore ? parityCore.orders : strategyCore.orders;
+    const signalMarkers = parityCore?.rsiMarkers || strategyCore.markers;
     if (queryParams().has("debugStrategy")) {
       window.__singleStrategyDebug = {
         timeframe: this.config.label,
@@ -2894,9 +2916,15 @@ class SingleFramePanel {
         panelReasonDetail: status.panelReasonDetail,
         panelStopText: status.panelStopText
       })));
+      document.body.dataset.singleRsiMarkersDebug = JSON.stringify((parityCore?.rsiMarkers || signalMarkers).map((item) => ({
+        time: item.time,
+        text: item.text,
+        color: item.color,
+        position: item.position,
+        shape: item.shape
+      })));
     }
     if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, orderSource);
-    const signalMarkers = strategyCore.markers;
     const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? orderSource.filter((order) => order.action === "entry").at(-1) : null;
     const rsiState = detectRsiState(rsiData, rsiEmaData, rsiWmaData, signalMarkers);
     const strategy = parityCore

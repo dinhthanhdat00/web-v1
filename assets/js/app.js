@@ -546,6 +546,7 @@ const STRATEGY_INPUTS = {
   h4SwingTrailAfterOneR: true,
   enableBreakEvenAtTwoR: false,
   breakEvenRMultiple: 2.0,
+  enableWeeklyVwapTrail: false,
   flatCooldownBars: 1,
   nonConsensusCooldownBars: 3,
   requireFreshTriggerAfterNonConsensus: true,
@@ -1161,6 +1162,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const h12Packs = computeFramePacks(h12Candles);
   const d1Packs = computeFramePacks(d1Candles);
   const d2Packs = computeFramePacks(d2Candles);
+  const weeklyVwapByTime = valueMap(anchoredVwap(h4Candles, "W"));
   const orders = [];
   const statusHistory = [];
   const initialEquity = 100000;
@@ -1202,6 +1204,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   let lastNonConsensusExitTime = null;
   let lastProcessedH12TriggerTime = null;
   let prevObservedH12TriggerTime = null;
+  let sundayVwapRef = null;
   let lastSignalReasonCode = "NONE";
   let lastSignalReasonDetail = "-";
   let lastSignalActionText = "NONE";
@@ -1307,6 +1310,15 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const d1 = alignClosedPackByTime(d1Packs, candle.time, 24 * 60 * 60);
     const d2 = alignClosedPackByTime(d2Packs, candle.time, 2 * 24 * 60 * 60);
     if (!current || !h12 || !d1 || !d2) continue;
+    const prevCandle = h4Candles[index - 1];
+    if (prevCandle) {
+      const currentDay = getAnchorBucket(candle.time, "D");
+      const prevDay = getAnchorBucket(prevCandle.time, "D");
+      const prevDow = dateInUtcPlus7(prevCandle.time).getUTCDay();
+      if (currentDay !== prevDay && prevDow === 0) {
+        sundayVwapRef = weeklyVwapByTime.get(prevCandle.time) ?? sundayVwapRef;
+      }
+    }
 
     if (positionSide === 1 && positionActiveStop != null && candle.low <= positionActiveStop) {
       closePosition(index, positionActiveStop, positionTrailRef === "-" ? "Setup SL" : `${positionTrailRef} SL`, "SL");
@@ -1330,25 +1342,56 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     if (positionSide === -1 && lastPositionEntryIndex != null && index > lastPositionEntryIndex && current.shortTrailFormEvent) {
       confirmedFormShortHigh = highest(h4Candles, index - 1, formTrailLookback);
     }
-    if (STRATEGY_INPUTS.enableH4SwingTrail && positionSide === 1 && positionActiveStop != null && confirmedFormLongLow != null) {
-      const activeLongSwingTrailStop = confirmedFormLongLow - STRATEGY_INPUTS.h4SwingSlBuffer;
+    const dayOfWeek = dateInUtcPlus7(candle.time).getUTCDay();
+    const useSundayVwapRef = dayOfWeek === 1 || dayOfWeek === 2;
+    const activeTrailVwap = useSundayVwapRef && sundayVwapRef != null ? sundayVwapRef : weeklyVwapByTime.get(candle.time);
+    if (positionSide === 1 && positionActiveStop != null) {
+      let nextLongStop = positionActiveStop;
+      let nextLongRef = positionTrailRef;
+      const activeLongSwingTrailStop = confirmedFormLongLow != null ? confirmedFormLongLow - STRATEGY_INPUTS.h4SwingSlBuffer : null;
       const longInitialRisk = positionStopAnchor != null && positionAvgPrice != null ? positionAvgPrice - positionStopAnchor : null;
       const longReachedOneR = longInitialRisk != null && longInitialRisk > 0 && candle.high >= positionAvgPrice + longInitialRisk;
-      const longSwingTrailReady = (!STRATEGY_INPUTS.h4SwingTrailAfterOneR || longReachedOneR) && activeLongSwingTrailStop < candle.close;
-      if (longSwingTrailReady && activeLongSwingTrailStop > positionActiveStop) {
-        positionActiveStop = activeLongSwingTrailStop;
-        positionTrailRef = `H4FORM+${STRATEGY_INPUTS.h4SwingSlBuffer}`;
+      const longReachedBreakEvenR = longInitialRisk != null && longInitialRisk > 0 && candle.high >= positionAvgPrice + longInitialRisk * STRATEGY_INPUTS.breakEvenRMultiple;
+      const longVwapTrailReady = STRATEGY_INPUTS.enableWeeklyVwapTrail && longReachedOneR && activeTrailVwap != null && activeTrailVwap < candle.close && longInitialRisk != null && candle.close - activeTrailVwap >= longInitialRisk;
+      const longSwingTrailReady = STRATEGY_INPUTS.enableH4SwingTrail && (!STRATEGY_INPUTS.h4SwingTrailAfterOneR || longReachedOneR) && activeLongSwingTrailStop != null && activeLongSwingTrailStop < candle.close;
+      if (STRATEGY_INPUTS.enableBreakEvenAtTwoR && longReachedBreakEvenR && positionAvgPrice > nextLongStop + STRATEGY_INPUTS.priceTick) {
+        nextLongStop = positionAvgPrice;
+        nextLongRef = `BE${STRATEGY_INPUTS.breakEvenRMultiple.toFixed(1).replace(/\.0$/, "")}R`;
       }
+      if (longVwapTrailReady && activeTrailVwap > nextLongStop + STRATEGY_INPUTS.priceTick) {
+        nextLongStop = activeTrailVwap;
+        nextLongRef = useSundayVwapRef ? "SUNVWAP" : "VWAPW";
+      }
+      if (longSwingTrailReady && activeLongSwingTrailStop > nextLongStop + STRATEGY_INPUTS.priceTick) {
+        nextLongStop = activeLongSwingTrailStop;
+        nextLongRef = `H4FORM+${STRATEGY_INPUTS.h4SwingSlBuffer}`;
+      }
+      positionActiveStop = nextLongStop;
+      positionTrailRef = nextLongRef;
     }
-    if (STRATEGY_INPUTS.enableH4SwingTrail && positionSide === -1 && positionActiveStop != null && confirmedFormShortHigh != null) {
-      const activeShortSwingTrailStop = confirmedFormShortHigh + STRATEGY_INPUTS.h4SwingSlBuffer;
+    if (positionSide === -1 && positionActiveStop != null) {
+      let nextShortStop = positionActiveStop;
+      let nextShortRef = positionTrailRef;
+      const activeShortSwingTrailStop = confirmedFormShortHigh != null ? confirmedFormShortHigh + STRATEGY_INPUTS.h4SwingSlBuffer : null;
       const shortInitialRisk = positionStopAnchor != null && positionAvgPrice != null ? positionStopAnchor - positionAvgPrice : null;
       const shortReachedOneR = shortInitialRisk != null && shortInitialRisk > 0 && candle.low <= positionAvgPrice - shortInitialRisk;
-      const shortSwingTrailReady = (!STRATEGY_INPUTS.h4SwingTrailAfterOneR || shortReachedOneR) && activeShortSwingTrailStop > candle.close;
-      if (shortSwingTrailReady && activeShortSwingTrailStop < positionActiveStop) {
-        positionActiveStop = activeShortSwingTrailStop;
-        positionTrailRef = `H4FORM+${STRATEGY_INPUTS.h4SwingSlBuffer}`;
+      const shortReachedBreakEvenR = shortInitialRisk != null && shortInitialRisk > 0 && candle.low <= positionAvgPrice - shortInitialRisk * STRATEGY_INPUTS.breakEvenRMultiple;
+      const shortVwapTrailReady = STRATEGY_INPUTS.enableWeeklyVwapTrail && shortReachedOneR && activeTrailVwap != null && activeTrailVwap > candle.close && shortInitialRisk != null && activeTrailVwap - candle.close >= shortInitialRisk;
+      const shortSwingTrailReady = STRATEGY_INPUTS.enableH4SwingTrail && (!STRATEGY_INPUTS.h4SwingTrailAfterOneR || shortReachedOneR) && activeShortSwingTrailStop != null && activeShortSwingTrailStop > candle.close;
+      if (STRATEGY_INPUTS.enableBreakEvenAtTwoR && shortReachedBreakEvenR && positionAvgPrice < nextShortStop - STRATEGY_INPUTS.priceTick) {
+        nextShortStop = positionAvgPrice;
+        nextShortRef = `BE${STRATEGY_INPUTS.breakEvenRMultiple.toFixed(1).replace(/\.0$/, "")}R`;
       }
+      if (shortVwapTrailReady && activeTrailVwap < nextShortStop - STRATEGY_INPUTS.priceTick) {
+        nextShortStop = activeTrailVwap;
+        nextShortRef = useSundayVwapRef ? "SUNVWAP" : "VWAPW";
+      }
+      if (shortSwingTrailReady && activeShortSwingTrailStop < nextShortStop - STRATEGY_INPUTS.priceTick) {
+        nextShortStop = activeShortSwingTrailStop;
+        nextShortRef = `H4FORM+${STRATEGY_INPUTS.h4SwingSlBuffer}`;
+      }
+      positionActiveStop = nextShortStop;
+      positionTrailRef = nextShortRef;
     }
 
     if (pendingReverseSide && pendingReverseIndex != null && index > pendingReverseIndex + 1) {

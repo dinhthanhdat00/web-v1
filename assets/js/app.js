@@ -373,6 +373,35 @@ function aggregateCandles(source, groupSize) {
   return result;
 }
 
+function aggregateCandlesByTime(source, groupSize, baseSeconds) {
+  if (groupSize <= 1) return source.slice();
+  const bucketSeconds = baseSeconds * groupSize;
+  const buckets = new Map();
+
+  source.forEach((candle) => {
+    const bucketStart = Math.floor(candle.time / bucketSeconds) * bucketSeconds;
+    const existing = buckets.get(bucketStart);
+    if (!existing) {
+      buckets.set(bucketStart, {
+        time: bucketStart,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume
+      });
+      return;
+    }
+
+    existing.high = Math.max(existing.high, candle.high);
+    existing.low = Math.min(existing.low, candle.low);
+    existing.close = candle.close;
+    existing.volume += candle.volume;
+  });
+
+  return Array.from(buckets.values()).sort((a, b) => a.time - b.time);
+}
+
 function timeframeSeconds(config) {
   const match = String(config.apiTf || "").match(/^(\d+)([hdwM])$/);
   if (!match) return 4 * 60 * 60;
@@ -2534,7 +2563,7 @@ class SingleFramePanel {
       h4: h4Raw.map(toChartCandle),
       h12: h12Raw.map(toChartCandle),
       d1: d1Candles,
-      d2: aggregateCandles(d1Candles, 2)
+      d2: aggregateCandlesByTime(d1Candles, 2, 24 * 60 * 60)
     };
     this.refreshCandles();
     this.draw(true);

@@ -466,6 +466,10 @@ function marker(time, text, color, position = "belowBar", shape = "circle") {
 const STRATEGY_CONFIG = {
   noiseLookback: 7,
   noiseCrossCount: 3,
+  h4MidZoneLow: 40,
+  h4MidZoneHigh: 60,
+  h4MidNoiseLookback: 8,
+  h4MidNoiseMinBars: 5,
   iiTo3WindowBars: 2,
   stateFreshBars: 1,
   setupStopLookback: 6,
@@ -908,6 +912,7 @@ function computeFramePacks(candles) {
   const sell2Condition = [];
   const buy3Condition = [];
   const sell3Condition = [];
+  const h4MidZoneFlags = [];
   const spreadEma = [];
   let side = 0;
   let point = 0;
@@ -934,6 +939,15 @@ function computeFramePacks(candles) {
     const aboveBoth = row.rsi > row.ema && row.rsi > row.wma;
     const belowBoth = row.rsi < row.ema && row.rsi < row.wma;
     const betweenBoth = !aboveBoth && !belowBoth;
+    const h4MidZoneFlag = row.rsi >= STRATEGY_CONFIG.h4MidZoneLow && row.rsi <= STRATEGY_CONFIG.h4MidZoneHigh
+      && row.ema >= STRATEGY_CONFIG.h4MidZoneLow && row.ema <= STRATEGY_CONFIG.h4MidZoneHigh
+      && row.wma >= STRATEGY_CONFIG.h4MidZoneLow && row.wma <= STRATEGY_CONFIG.h4MidZoneHigh;
+    h4MidZoneFlags[index] = h4MidZoneFlag;
+    const h4MidZoneBars = h4MidZoneFlags
+      .slice(Math.max(0, index - STRATEGY_CONFIG.h4MidNoiseLookback + 1), index + 1)
+      .filter(Boolean).length;
+    const h4MidNoiseRequired = Math.min(STRATEGY_CONFIG.h4MidNoiseMinBars, STRATEGY_CONFIG.h4MidNoiseLookback);
+    const h4MidNoiseState = betweenBoth && h4MidZoneBars >= h4MidNoiseRequired;
     const spreadShrinking = spread <= prevSpread;
     const linesExpanding = spread > prevSpread;
     const rsiRising = row.rsi >= prev.rsi;
@@ -1046,6 +1060,8 @@ function computeFramePacks(candles) {
       buy3ClassicEvent,
       sell3ClassicEvent,
       noiseState,
+      h4MidNoiseState,
+      h4MidZoneBars,
       trap,
       semanticState,
       rsi: row.rsi,
@@ -1236,14 +1252,18 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const h12TriggerFresh = h12.triggerTime != null && h12.triggerTime !== prevObservedH12TriggerTime;
     if (h12.triggerTime != null) prevObservedH12TriggerTime = h12.triggerTime;
     const h12TriggerSide = h12.triggerCode > 0 ? 1 : h12.triggerCode < 0 ? -1 : 0;
-    const h12RawUsableTrigger = h12.triggerCode !== 0 && h12TriggerSide !== 0 && h12.triggerTime !== lastProcessedH12TriggerTime && h12TriggerFresh;
+    const h12RawUsableTrigger = h12.triggerCode !== 0 && h12TriggerSide !== 0 && h12TriggerFresh;
+    const h12DuplicateProcessed = h12.triggerTime != null && h12.triggerTime === lastProcessedH12TriggerTime;
+    const h12UsableTrigger = h12RawUsableTrigger && !h12DuplicateProcessed;
     const currentTriggerSide = current.triggerCode > 0 ? 1 : current.triggerCode < 0 ? -1 : 0;
-    const currentUsableTrigger = currentTriggerSide !== 0;
-    const bothTriggerConflict = h12RawUsableTrigger && currentUsableTrigger && h12TriggerSide === -currentTriggerSide;
-    const preferH12 = h12RawUsableTrigger && !currentUsableTrigger;
-    const triggerCode = bothTriggerConflict ? 0 : preferH12 ? h12.triggerCode : currentUsableTrigger ? current.triggerCode : h12RawUsableTrigger ? h12.triggerCode : 0;
+    const rawCurrentUsableTrigger = currentTriggerSide !== 0;
+    const h4NoiseSuppressCurrent = rawCurrentUsableTrigger && current.h4MidNoiseState;
+    const currentUsableTrigger = rawCurrentUsableTrigger && !(h4NoiseSuppressCurrent && !STRATEGY_CONFIG.ignoreH4NoiseGate);
+    const bothTriggerConflict = h12UsableTrigger && currentUsableTrigger && h12TriggerSide === -currentTriggerSide;
+    const preferH12 = h12UsableTrigger && !currentUsableTrigger;
+    const triggerCode = bothTriggerConflict ? 0 : preferH12 ? h12.triggerCode : currentUsableTrigger ? current.triggerCode : h12UsableTrigger ? h12.triggerCode : 0;
     const triggerSide = triggerCode > 0 ? 1 : triggerCode < 0 ? -1 : 0;
-    const triggerTf = triggerCode === 0 ? "none" : currentUsableTrigger ? "H4" : h12RawUsableTrigger ? "H12" : "none";
+    const triggerTf = triggerCode === 0 ? "none" : currentUsableTrigger ? "H4" : h12UsableTrigger ? "H12" : "none";
     const triggerLane = triggerTf === "H12" ? "swing" : "early";
     const triggerStop = triggerSide === 1 ? current.entryLongStop : triggerSide === -1 ? current.entryShortStop : null;
     const triggerStopRef = triggerSide === 1 ? current.entryLongStopRef : triggerSide === -1 ? current.entryShortStopRef : "-";
@@ -1261,24 +1281,27 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const h12TrapAgainstTrigger = triggerTf === "H12" && ((triggerSide === -1 && h12.trap === 1) || (triggerSide === 1 && h12.trap === -1));
     const currentTrapAgainstTrigger = triggerTf === "H4" && ((triggerSide === -1 && current.trap === 1) || (triggerSide === 1 && current.trap === -1));
     const triggerTrapWait = h12TrapAgainstTrigger || currentTrapAgainstTrigger;
-    const hasTrigger = h12RawUsableTrigger || currentUsableTrigger;
+    const h4NoiseWait = h4NoiseSuppressCurrent && !STRATEGY_CONFIG.ignoreH4NoiseGate && !h12UsableTrigger;
+    const hasTrigger = h12UsableTrigger || currentUsableTrigger;
     const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
     const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
+    const h4D2SoftProbe = triggerTf === "H4" && oppositeOther && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
     const h4D2Override = triggerTf === "H4" && hasTrigger && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
-    const entryModePreQuality = h12ReadinessBlocked ? "NO-TRADE" : h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
+    const entryModePreQuality = h12ReadinessBlocked ? "NO-TRADE" : h4D2SoftProbe || h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
     const preQualityActionable = entryModePreQuality === "PARTIAL ONLY" || entryModePreQuality === "FULL ENTRY";
     const riskPerUnit = triggerSide === 1 && triggerStop != null ? candle.close - triggerStop : triggerSide === -1 && triggerStop != null ? triggerStop - candle.close : null;
     const validTriggerStop = preQualityActionable && riskPerUnit != null && riskPerUnit > 0;
     const triggerSlPct = validTriggerStop ? riskPerUnit / candle.close * 100 : null;
     const slQualityOk = validTriggerStop && triggerSlPct >= STRATEGY_CONFIG.minSlPct && triggerSlPct <= STRATEGY_CONFIG.maxSlPct;
     const triggerTfScore = triggerTf === "H12" ? 2 : triggerTf === "H4" ? 1 : 0;
-    const d2QualityScore = d2Regime === "D2_SUPPORT" ? 2 : d2Regime === "D2_NEUTRAL" || h4D2Override ? 1 : 0;
+    const d2QualityScore = d2Regime === "D2_SUPPORT" ? 2 : d2Regime === "D2_NEUTRAL" || h4D2SoftProbe || h4D2Override ? 1 : 0;
     const mtfQualityScore = weakCounter ? 0 : 1;
     const slQualityScore = slQualityOk ? 1 : 0;
     const triggerQualityScore = triggerTfScore + d2QualityScore + mtfQualityScore + slQualityScore;
     const qualityOk = preQualityActionable && validTriggerStop && triggerQualityScore >= STRATEGY_CONFIG.minQualityScore;
     const qualityGap = STRATEGY_CONFIG.minQualityScore - triggerQualityScore;
-    const softLowQualitySetup = preQualityActionable && validTriggerStop && STRATEGY_CONFIG.allowSoftLowQualityProbe && !qualityOk && qualityGap > 0 && qualityGap <= STRATEGY_CONFIG.softQualityBuffer && (Math.abs(triggerCode) === 5 || triggerTf === "H12" || triggerTf === "H4") && !strongConflict && !triggerTrapWait;
+    const softQualityStructureOk = Math.abs(triggerCode) === 5 || triggerTf === "H12" || (triggerTf === "H4" && readinessAllowsEarlyCounter && (STRATEGY_CONFIG.ignoreH4NoiseGate || !current.h4MidNoiseState));
+    const softLowQualitySetup = preQualityActionable && validTriggerStop && STRATEGY_CONFIG.allowSoftLowQualityProbe && !qualityOk && qualityGap > 0 && qualityGap <= STRATEGY_CONFIG.softQualityBuffer && softQualityStructureOk && !strongConflict && !triggerTrapWait;
     const entryMode = qualityOk ? entryModePreQuality : softLowQualitySetup ? "PARTIAL ONLY" : "NO-TRADE";
     const actionableEntry = entryMode === "PARTIAL ONLY" || entryMode === "FULL ENTRY";
 
@@ -1341,7 +1364,8 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const freshAfterNonConsensus = lastNonConsensusExitTime == null || (triggerTf === "H12" ? h12.triggerTime : candle.time) > lastNonConsensusExitTime;
     const reverseNextBarValid = pendingReverseSide !== 0 && pendingReverseIndex != null && index === pendingReverseIndex + 1 && actionableEntry && triggerSide === pendingReverseSide;
     const effectiveEntryCooldownOk = entryCooldownOk || reverseNextBarValid;
-    const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus;
+    const h12AlreadyProcessed = triggerTf === "H12" && h12DuplicateProcessed;
+    const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus && !h12AlreadyProcessed && !h4NoiseWait;
     const h4OriginFlowBlocked = positionSide === 0 && triggerTf === "H12" && actionableEntry;
     const postThesisBreakSameSideBlocked = positionSide === 0 && postThesisBreakLockActive && actionableEntry && triggerSide === postThesisBreakBlockedSide;
     const entryRiskPct = entryMode === "FULL ENTRY" ? fullRiskPct : entryMode === "PARTIAL ONLY" ? partialRiskPct : null;

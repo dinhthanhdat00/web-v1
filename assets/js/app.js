@@ -1148,6 +1148,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const d1Packs = computeFramePacks(d1Candles);
   const d2Packs = computeFramePacks(d2Candles);
   const orders = [];
+  const statusHistory = [];
   const initialEquity = 100000;
   const partialRiskPct = 1.0;
   const fullRiskPct = 2.0;
@@ -1187,6 +1188,15 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   let lastNonConsensusExitTime = null;
   let lastProcessedH12TriggerTime = null;
   let prevObservedH12TriggerTime = null;
+  let lastSignalReasonCode = "NONE";
+  let lastSignalReasonDetail = "-";
+  let lastSignalActionText = "NONE";
+  let lastSignalTriggerText = "none";
+  let lastSignalIndex = null;
+  let lastThesisBreakCode = "NONE";
+  let lastThesisBreakDetail = "-";
+  let lastThesisBreakIndex = null;
+  let latestStatus = null;
 
   function resetPositionState({ keepPostBreakLock = true } = {}) {
     positionSide = 0;
@@ -1248,6 +1258,24 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const nextQty = positionQty + qty;
     positionAvgPrice = (positionAvgPrice * positionQty + price * qty) / nextQty;
     positionQty = nextQty;
+  }
+
+  function recordStatus(index, status) {
+    const candle = h4Candles[index];
+    latestStatus = {
+      time: candle.time,
+      index,
+      positionSide,
+      positionAvgPrice,
+      positionActiveStop,
+      positionTrailRef,
+      thesisStage,
+      thesisFrameLevel,
+      thesisRequiredTier,
+      thesisBrokenBars,
+      ...status
+    };
+    statusHistory.push(latestStatus);
   }
 
   for (let index = 0; index < h4Candles.length; index += 1) {
@@ -1396,6 +1424,22 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const nonConsensusExit = positionSide !== 0 && thesisBrokenConfirmed && !reverseActionableSignal;
 
     if (reverseActionableSignal) {
+      const entryReasonCode = `REVERSE_PREP_${triggerSide === 1 ? "BUY" : "SELL"}`;
+      const entryReasonDetail = "close -> next bar";
+      recordStatus(index, {
+        mtfState,
+        d2Regime,
+        triggerText,
+        triggerTf,
+        entryMode,
+        entryActionText: "REVERSE_PREP",
+        entryReasonCode,
+        entryReasonDetail,
+        panelReasonCode: entryReasonCode,
+        panelReasonDetail: entryReasonDetail,
+        thesisBrokenReason,
+        thesisBrokenConfirmed
+      });
       closePosition(index, candle.close, `reverse_prepare_${triggerText}`, `REV ${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`);
       pendingReverseSide = triggerSide;
       pendingReverseIndex = index;
@@ -1405,13 +1449,33 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     if (nonConsensusExit) {
       const postThesisBreakFamilyLock = thesisFrameLevel >= 2 && thesisFamilyBroken;
       const exitSide = positionSide;
+      const exitThesisFrameLevel = thesisFrameLevel;
+      const entryReasonCode = `EXIT_THESIS_${thesisFrameLabel(exitThesisFrameLevel)}`;
+      const entryReasonDetail = `${thesisFrameLabel(exitThesisFrameLevel)} broken | ${thesisBrokenReason}`;
+      lastThesisBreakCode = entryReasonCode;
+      lastThesisBreakDetail = entryReasonDetail;
+      lastThesisBreakIndex = index;
+      recordStatus(index, {
+        mtfState,
+        d2Regime,
+        triggerText,
+        triggerTf,
+        entryMode,
+        entryActionText: "NON_CONSENSUS_EXIT",
+        entryReasonCode,
+        entryReasonDetail,
+        panelReasonCode: entryReasonCode,
+        panelReasonDetail: entryReasonDetail,
+        thesisBrokenReason,
+        thesisBrokenConfirmed
+      });
       closePosition(index, candle.close, `non_consensus_${thesisBrokenReason}`, "OUT");
       lastNonConsensusExitIndex = index;
       lastNonConsensusExitTime = candle.time;
       if (postThesisBreakFamilyLock) {
         postThesisBreakLockActive = true;
         postThesisBreakBlockedSide = exitSide;
-        postThesisBreakFrameLevel = thesisFrameLevel;
+        postThesisBreakFrameLevel = exitThesisFrameLevel;
       }
       continue;
     }
@@ -1479,6 +1543,115 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const topUpTriggerText = promotionTopUpReady ? `${thesisFrameLabel(promotionTargetLevel)}/promote` : continuationTopUpReady ? `${thesisFrameLabel(currentThesisAddLevel)}/${continuationH4TriggerText}` : triggerText;
     const topUpCommentPrefix = promotionTopUpReady ? "Promote " : continuationTopUpReady ? "Continue " : "ThesisFull ";
     const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && !postThesisBreakSameSideBlocked && positionSide === 0 && !topUpReady && entryQty != null && entryQty > 0;
+    const rawHasTrigger = h12RawUsableTrigger || rawCurrentUsableTrigger;
+    const sameSidePosition = positionSide !== 0 && triggerSide === positionSide;
+    const reentryBlocked = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && (!nonConsensusCooldownOk || !freshAfterNonConsensus);
+    const nonConsensusWarning = thesisBrokenSignal && !thesisBrokenConfirmed;
+    const invalidTriggerSetup = preQualityActionable && !validTriggerStop;
+    const topUpBlockedStop = (promotionTopUpIntent || continuationTopUpIntent) && !stopLockedBeyondEntry;
+    const topUpBlockedPyramid = (promotionTopUpIntent || continuationTopUpIntent) && stopLockedBeyondEntry && !topUpPyramidOk;
+    const topUpBlockedCap = (promotionTopUpIntent || continuationTopUpIntent) && stopLockedBeyondEntry && topUpPyramidOk && !topUpCapacityOk;
+    const topUpBlockedQty = (promotionTopUpIntent || continuationTopUpIntent) && stopLockedBeyondEntry && topUpPyramidOk && topUpCapacityOk && !topUpHasQty;
+    let entryActionText = entryMode;
+    if (nonConsensusWarning) entryActionText = "NON_CONS_MONITOR";
+    else if (topUpReady) entryActionText = "ADD_OK";
+    else if (topUpBlockedStop) entryActionText = "LOCK_WAIT";
+    else if (topUpBlockedPyramid) entryActionText = "PYRAMID_WAIT";
+    else if (topUpBlockedCap) entryActionText = "CAP_WAIT";
+    else if (topUpBlockedQty) entryActionText = "ZERO_QTY";
+    else if (triggerTrapWait && (hasTrigger || rawHasTrigger)) entryActionText = "TRAP_WAIT";
+    else if (h12ReadinessBlocked) entryActionText = "HTF_STRETCHED_WAIT";
+    else if (h4NoiseWait) entryActionText = "H4_NOISE_WAIT";
+    else if (reentryBlocked) entryActionText = "WAIT_REENTRY";
+    else if (h12AlreadyProcessed) entryActionText = "HTF_DUPLICATE";
+    else if (h4OriginFlowBlocked) entryActionText = "H4_FIRST_WAIT";
+    else if (postThesisBreakSameSideBlocked) entryActionText = "THESIS_REBUILD_WAIT";
+    else if (invalidTriggerSetup) entryActionText = "INVALID_SL";
+    else if (!qualityOk && preQualityActionable && validTriggerStop && !softLowQualitySetup) entryActionText = "LOW_QUALITY";
+    else if (softLowQualitySetup) entryActionText = "SOFT_LOW_QUALITY";
+    else if (flatEntryReady && (h4D2SoftProbe || h4D2Override)) entryActionText = "H4_D2_GATE";
+    else if (flatEntryReady) entryActionText = entryMode;
+    else if (positionSide !== 0 && currentTriggerSide === -positionSide) entryActionText = "H4_WARNING";
+    else if (h4D2SoftProbe || h4D2Override) entryActionText = "H4_D2_GATE";
+
+    let entryReasonCode = entryMode;
+    if (nonConsensusWarning) entryReasonCode = "WARN_THESIS_BREAK";
+    else if (topUpReady) entryReasonCode = promotionTopUpReady ? `ENTER_TOPUP_PROMOTION_${thesisFrameLabel(promotionTargetLevel)}` : continuationTopUpReady ? `ENTER_TOPUP_CONT_${thesisFrameLabel(currentThesisAddLevel)}` : "ENTER_TOPUP_CONFIRMED";
+    else if (topUpBlockedStop) entryReasonCode = "BLOCK_STOP_UNLOCKED";
+    else if (topUpBlockedPyramid) entryReasonCode = "BLOCK_PYRAMID";
+    else if (topUpBlockedCap) entryReasonCode = "BLOCK_CAP_USAGE";
+    else if (topUpBlockedQty) entryReasonCode = "BLOCK_ZERO_QTY";
+    else if (triggerTrapWait && (hasTrigger || rawHasTrigger)) entryReasonCode = "BLOCK_TRAP_WAIT";
+    else if (h12ReadinessBlocked) entryReasonCode = "BLOCK_H12_STRETCHED";
+    else if (h4NoiseWait) entryReasonCode = "BLOCK_H4_NOISE";
+    else if (reentryBlocked) entryReasonCode = "BLOCK_REENTRY_COOLDOWN";
+    else if (h12AlreadyProcessed) entryReasonCode = "BLOCK_DUP_H12";
+    else if (h4OriginFlowBlocked) entryReasonCode = "BLOCK_H4_FIRST_FLOW";
+    else if (postThesisBreakSameSideBlocked) entryReasonCode = "BLOCK_POST_THESIS_BREAK_SAME_SIDE";
+    else if (invalidTriggerSetup) entryReasonCode = "BLOCK_INVALID_SL";
+    else if (!qualityOk && preQualityActionable && validTriggerStop && !softLowQualitySetup) entryReasonCode = "BLOCK_LOW_QUALITY";
+    else if (softLowQualitySetup) entryReasonCode = `ENTER_SOFT_${triggerTf}_${triggerSide === 1 ? "BUY" : "SELL"}`;
+    else if (flatEntryReady) entryReasonCode = `ENTER_${triggerTf}_${triggerSide === 1 ? "BUY" : "SELL"}`;
+    else if (positionSide !== 0 && currentTriggerSide === -positionSide) entryReasonCode = "WARN_H4_COUNTER";
+    else if (!rawHasTrigger) entryReasonCode = "NO_TRIGGER";
+    else if (positionSide !== 0 && oppositePosition) entryReasonCode = "BLOCK_OPPOSITE_POSITION";
+    else if (positionSide !== 0 && sameSidePosition) entryReasonCode = "HOLD_SAME_SIDE";
+    else if (actionableEntry && !effectiveEntryCooldownOk) entryReasonCode = "BLOCK_FLAT_COOLDOWN";
+    else if (actionableEntry && !freshAfterNonConsensus) entryReasonCode = "BLOCK_NEEDS_FRESH_TRIGGER";
+    else if (actionableEntry && (entryQty == null || entryQty <= 0)) entryReasonCode = "BLOCK_ZERO_QTY";
+    else if (actionableEntry) entryReasonCode = "BLOCK_TRIGGER_NOT_READY";
+
+    let entryReasonDetail = triggerText;
+    if (flatEntryReady) entryReasonDetail = `${triggerText} | SL ${formatTradePrice(triggerStop)} ${triggerStopRef}`;
+    else if (topUpReady && promotionTopUpReady) entryReasonDetail = `${topUpTriggerText} | SL ${formatTradePrice(positionActiveStop)} ${positionTrailRef}`;
+    else if (topUpReady && continuationTopUpReady) entryReasonDetail = `continue -> ${thesisFrameLabel(currentThesisAddLevel)} | ${continuationH4TriggerText} | risk ${topUpRiskPct.toFixed(1)}%`;
+    else if (nonConsensusWarning) entryReasonDetail = `${thesisFrameLabel(thesisFrameLevel)} break ${thesisBrokenBars}/${thesisBreakRequiredBars} | ${thesisBrokenReason}`;
+    else if (topUpBlockedStop) entryReasonDetail = "SL not locked beyond entry";
+    else if (topUpBlockedPyramid) entryReasonDetail = `open legs ${openThesisLegs}/${maxOpenThesisLegs}`;
+    else if (topUpBlockedCap) entryReasonDetail = "capital usage cap reached";
+    else if (topUpBlockedQty) entryReasonDetail = "top-up qty 0";
+    else if (h12AlreadyProcessed) entryReasonDetail = `H12@${h12.triggerTime ?? "-"}`;
+    else if (h4OriginFlowBlocked) entryReasonDetail = "flat account waits H4 origin first";
+    else if (postThesisBreakSameSideBlocked) entryReasonDetail = `wait opposite after ${thesisFrameLabel(postThesisBreakFrameLevel)} thesis break`;
+    else if (!qualityOk && preQualityActionable && validTriggerStop) entryReasonDetail = `Q ${triggerQualityScore}/${STRATEGY_CONFIG.minQualityScore} gap ${qualityGap}`;
+    else if (invalidTriggerSetup) entryReasonDetail = "SL -";
+    else if (actionableEntry && !effectiveEntryCooldownOk) entryReasonDetail = `exit@${lastExitIndex ?? "-"}`;
+    else if (actionableEntry && !freshAfterNonConsensus) entryReasonDetail = "need_fresh_after_non_cons";
+    else if (positionSide !== 0) entryReasonDetail = `pos ${positionSide === 1 ? "LONG" : "SHORT"} ${thesisFrameLabel(thesisFrameLevel)}`;
+
+    if (rawHasTrigger && lastSignalIndex !== index) {
+      lastSignalReasonCode = entryReasonCode;
+      lastSignalReasonDetail = entryReasonDetail;
+      lastSignalActionText = entryActionText;
+      lastSignalTriggerText = triggerText;
+      lastSignalIndex = index;
+    }
+    const useLastThesisBreak = positionSide === 0 && lastThesisBreakIndex != null && (lastSignalIndex == null || lastThesisBreakIndex >= lastSignalIndex);
+    const panelReasonCode = nonConsensusWarning ? entryReasonCode : rawHasTrigger ? entryReasonCode : useLastThesisBreak ? `LAST_${lastThesisBreakCode}` : lastSignalIndex != null ? `LAST_${lastSignalReasonCode}` : entryReasonCode;
+    const panelReasonDetail = nonConsensusWarning ? entryReasonDetail : rawHasTrigger ? entryReasonDetail : useLastThesisBreak ? `bar ${lastThesisBreakIndex} | ${lastThesisBreakDetail}` : lastSignalIndex != null ? `bar ${lastSignalIndex} | ${lastSignalTriggerText} | ${lastSignalActionText}` : entryReasonDetail;
+    const panelStopPrice = positionSide !== 0 ? positionActiveStop : triggerStop;
+    const panelStopRef = positionSide !== 0 ? positionTrailRef : triggerStopRef;
+    recordStatus(index, {
+      mtfState,
+      d2Regime,
+      triggerText,
+      triggerTf,
+      triggerSide,
+      triggerCode,
+      entryMode,
+      entryActionText,
+      entryReasonCode,
+      entryReasonDetail,
+      panelReasonCode,
+      panelReasonDetail,
+      panelStopText: panelStopPrice == null ? "-" : `${formatTradePrice(panelStopPrice)}${panelStopRef !== "-" ? ` ${panelStopRef}` : ""}`,
+      thesisBrokenReason,
+      thesisBrokenConfirmed,
+      rawHasTrigger,
+      actionableEntry,
+      flatEntryReady,
+      topUpReady
+    });
 
     if (topUpReady && topUpEntrySide !== 0 && topUpQty != null && topUpQty > 0) {
       const code = `${topUpEntrySide === 1 ? "B" : "S"}${Math.abs(continuationH4TriggerCode || triggerCode) === 4 ? "2" : "3"}`;
@@ -1547,7 +1720,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     }
   }
 
-  return { orders, status: { ready: true } };
+  return { orders, status: { ready: true, latest: latestStatus, history: statusHistory } };
 }
 
 function latestRsiRow(rsiData, rsiEmaData, rsiWmaData) {
@@ -2637,6 +2810,20 @@ class SingleFramePanel {
         price: order.price,
         detail: order.detail,
         position: order.position
+      })));
+      document.body.dataset.singleStatusDebug = JSON.stringify((parityCore?.status?.history || []).map((status) => ({
+        time: status.time,
+        index: status.index,
+        positionSide: status.positionSide,
+        mtfState: status.mtfState,
+        d2Regime: status.d2Regime,
+        triggerText: status.triggerText,
+        entryActionText: status.entryActionText,
+        entryReasonCode: status.entryReasonCode,
+        entryReasonDetail: status.entryReasonDetail,
+        panelReasonCode: status.panelReasonCode,
+        panelReasonDetail: status.panelReasonDetail,
+        panelStopText: status.panelStopText
       })));
     }
     if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, orderSource);

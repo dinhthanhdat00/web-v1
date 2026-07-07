@@ -1114,6 +1114,17 @@ function alignPackByTime(packs, time) {
   return result;
 }
 
+function alignClosedPackByTime(packs, time, targetSeconds, chartSeconds = 4 * 60 * 60) {
+  let result = null;
+  const visibleOffset = Math.max(0, targetSeconds - chartSeconds);
+  for (const pack of packs) {
+    if (!pack) continue;
+    if (pack.time + visibleOffset > time) break;
+    result = pack;
+  }
+  return result;
+}
+
 function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const h4Packs = computeFramePacks(h4Candles);
   const h12Packs = computeFramePacks(h12Candles);
@@ -1225,9 +1236,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   for (let index = 0; index < h4Candles.length; index += 1) {
     const candle = h4Candles[index];
     const current = h4Packs[index];
-    const h12 = alignPackByTime(h12Packs, candle.time);
-    const d1 = alignPackByTime(d1Packs, candle.time);
-    const d2 = alignPackByTime(d2Packs, candle.time);
+    const h12 = alignClosedPackByTime(h12Packs, candle.time, 12 * 60 * 60);
+    const d1 = alignClosedPackByTime(d1Packs, candle.time, 24 * 60 * 60);
+    const d2 = alignClosedPackByTime(d2Packs, candle.time, 2 * 24 * 60 * 60);
     if (!current || !h12 || !d1 || !d2) continue;
 
     if (positionSide === 1 && positionActiveStop != null && candle.low <= positionActiveStop) {

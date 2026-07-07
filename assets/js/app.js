@@ -533,15 +533,29 @@ const STRATEGY_CONFIG = {
 };
 
 const STRATEGY_INPUTS = {
+  partialRiskPct: 1.0,
+  fullRiskPct: 2.0,
+  maxLeverage: 1.0,
+  capitalUsageCapPct: 50.0,
+  slippageTicks: 2,
+  priceTick: 0.01,
   enableH4SwingTrail: true,
   h4SwingPivotBars: 50,
   h4FormTrailLookback: 11,
   h4SwingSlBuffer: 500,
   h4SwingTrailAfterOneR: true,
+  enableBreakEvenAtTwoR: false,
+  breakEvenRMultiple: 2.0,
+  flatCooldownBars: 1,
+  nonConsensusCooldownBars: 3,
+  requireFreshTriggerAfterNonConsensus: true,
+  htfReadinessLookback: 12,
+  allowH4EarlyD2Override: true,
   useStructureConfirmedH4SwingTrail: true,
   allowPromotionScaleIn: false,
   allowContinuationAddAfterBE: true,
   maxContinuationAddsPerThesis: 1,
+  thesisBreakConfirmBars: 2,
   allowRiskRecycleAdd: true
 };
 
@@ -980,7 +994,7 @@ function computeFramePacks(candles) {
 
     const prevSpread = Math.max(Math.abs(prev.rsi - prev.ema), Math.abs(prev.rsi - prev.wma), Math.abs(prev.ema - prev.wma));
     const spread = Math.max(Math.abs(row.rsi - row.ema), Math.abs(row.rsi - row.wma), Math.abs(row.ema - row.wma));
-    prevSpreadEma = prevSpreadEma == null ? spread : spread * (2 / (12 + 1)) + prevSpreadEma * (1 - (2 / (12 + 1)));
+    prevSpreadEma = prevSpreadEma == null ? spread : spread * (2 / (STRATEGY_INPUTS.htfReadinessLookback + 1)) + prevSpreadEma * (1 - (2 / (STRATEGY_INPUTS.htfReadinessLookback + 1)));
     spreadEma[index] = prevSpreadEma;
     const aboveBoth = row.rsi > row.ema && row.rsi > row.wma;
     const belowBoth = row.rsi < row.ema && row.rsi < row.wma;
@@ -1150,10 +1164,10 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const orders = [];
   const statusHistory = [];
   const initialEquity = 100000;
-  const partialRiskPct = 1.0;
-  const fullRiskPct = 2.0;
-  const maxLeverage = 1.0;
-  const capitalUsageCapPct = 50.0;
+  const partialRiskPct = STRATEGY_INPUTS.partialRiskPct;
+  const fullRiskPct = STRATEGY_INPUTS.fullRiskPct;
+  const maxLeverage = STRATEGY_INPUTS.maxLeverage;
+  const capitalUsageCapPct = STRATEGY_INPUTS.capitalUsageCapPct;
   const maxOpenThesisLegs = 6;
   let equity = initialEquity;
   let positionSide = 0;
@@ -1230,8 +1244,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
 
   function closePosition(index, price, detail, markerText = "OUT") {
     const candle = h4Candles[index];
+    const fillPrice = applyStrategySlippage(price, -positionSide);
     if (positionSide !== 0 && positionQty > 0 && positionAvgPrice != null) {
-      const gross = positionSide === 1 ? (price - positionAvgPrice) * positionQty : (positionAvgPrice - price) * positionQty;
+      const gross = positionSide === 1 ? (fillPrice - positionAvgPrice) * positionQty : (positionAvgPrice - fillPrice) * positionQty;
       equity += gross;
     }
     orders.push({
@@ -1241,7 +1256,8 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       shape: positionSide === 1 ? "arrowDown" : "arrowUp",
       text: markerText,
       action: "exit",
-      price,
+      price: fillPrice,
+      triggerPrice: price,
       detail,
       size: 1
     });
@@ -1258,6 +1274,12 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const nextQty = positionQty + qty;
     positionAvgPrice = (positionAvgPrice * positionQty + price * qty) / nextQty;
     positionQty = nextQty;
+  }
+
+  function applyStrategySlippage(price, direction) {
+    if (!Number.isFinite(price) || !direction) return price;
+    const offset = STRATEGY_INPUTS.slippageTicks * STRATEGY_INPUTS.priceTick;
+    return Number((price + direction * offset).toFixed(8));
   }
 
   function recordStatus(index, status) {
@@ -1371,7 +1393,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
     const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
     const h4D2SoftProbe = triggerTf === "H4" && oppositeOther && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
-    const h4D2Override = triggerTf === "H4" && hasTrigger && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
+    const h4D2Override = STRATEGY_INPUTS.allowH4EarlyD2Override && triggerTf === "H4" && hasTrigger && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
     const entryModePreQuality = h12ReadinessBlocked ? "NO-TRADE" : h4D2SoftProbe || h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
     const preQualityActionable = entryModePreQuality === "PARTIAL ONLY" || entryModePreQuality === "FULL ENTRY";
     const riskPerUnit = triggerSide === 1 && triggerStop != null ? candle.close - triggerStop : triggerSide === -1 && triggerStop != null ? triggerStop - candle.close : null;
@@ -1412,10 +1434,10 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const thesisBrokenSignal = thesisFamilyBroken || thesisStrengthBroken;
     thesisBrokenBars = positionSide !== 0 && thesisBrokenSignal ? thesisBrokenBars + 1 : 0;
     const thesisBreakRequiredBars = thesisFrameLevel === 3
-      ? thesisBreakBarsRequiredFromTime(candle.time, 24 * 60 * 60, 2)
+      ? thesisBreakBarsRequiredFromTime(candle.time, 24 * 60 * 60, STRATEGY_INPUTS.thesisBreakConfirmBars)
       : thesisFrameLevel === 2
-        ? thesisBreakBarsRequiredFromTime(candle.time, 12 * 60 * 60, 2)
-        : 2;
+        ? thesisBreakBarsRequiredFromTime(candle.time, 12 * 60 * 60, STRATEGY_INPUTS.thesisBreakConfirmBars)
+        : STRATEGY_INPUTS.thesisBreakConfirmBars;
     const thesisBrokenConfirmed = thesisBrokenSignal && thesisBrokenBars >= thesisBreakRequiredBars;
     const thesisBrokenReason = thesisFamilyBroken ? (thesisFrameLevel === 3 ? "d1_thesis_broken" : thesisFrameLevel === 2 ? "h12_thesis_broken" : "h4_thesis_broken") : thesisStrengthBroken ? (thesisFrameLevel === 3 ? "d1_thesis_lost_tier" : thesisFrameLevel === 2 ? "h12_thesis_lost_tier" : "h4_thesis_lost_tier") : "-";
     const oppositePosition = positionSide !== 0 && triggerSide === -positionSide;
@@ -1480,9 +1502,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       continue;
     }
 
-    const entryCooldownOk = lastExitIndex == null || index > lastExitIndex + 1;
-    const nonConsensusCooldownOk = lastNonConsensusExitIndex == null || index > lastNonConsensusExitIndex + 3;
-    const freshAfterNonConsensus = lastNonConsensusExitTime == null || (triggerTf === "H12" ? h12.triggerTime : candle.time) > lastNonConsensusExitTime;
+    const entryCooldownOk = lastExitIndex == null || index > lastExitIndex + STRATEGY_INPUTS.flatCooldownBars;
+    const nonConsensusCooldownOk = lastNonConsensusExitIndex == null || index > lastNonConsensusExitIndex + STRATEGY_INPUTS.nonConsensusCooldownBars;
+    const freshAfterNonConsensus = lastNonConsensusExitTime == null || !STRATEGY_INPUTS.requireFreshTriggerAfterNonConsensus || (triggerTf === "H12" ? h12.triggerTime : candle.time) > lastNonConsensusExitTime;
     const reverseNextBarValid = pendingReverseSide !== 0 && pendingReverseIndex != null && index === pendingReverseIndex + 1 && actionableEntry && triggerSide === pendingReverseSide;
     const effectiveEntryCooldownOk = entryCooldownOk || reverseNextBarValid;
     const h12AlreadyProcessed = triggerTf === "H12" && h12DuplicateProcessed;
@@ -1655,6 +1677,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
 
     if (topUpReady && topUpEntrySide !== 0 && topUpQty != null && topUpQty > 0) {
       const code = `${topUpEntrySide === 1 ? "B" : "S"}${Math.abs(continuationH4TriggerCode || triggerCode) === 4 ? "2" : "3"}`;
+      const topUpFillPrice = applyStrategySlippage(candle.close, topUpEntrySide);
       orders.push({
         time: candle.time,
         position: topUpEntrySide === 1 ? "belowBar" : "aboveBar",
@@ -1662,11 +1685,12 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
         shape: topUpEntrySide === 1 ? "arrowUp" : "arrowDown",
         text: `ADD ${code}`,
         action: "entry",
-        price: candle.close,
+        price: topUpFillPrice,
+        triggerPrice: candle.close,
         detail: `${topUpCommentPrefix}${topUpTriggerText} ${topUpRiskPct.toFixed(1)}%`,
         size: 1
       });
-      addToPosition(topUpQty, candle.close);
+      addToPosition(topUpQty, topUpFillPrice);
       openThesisLegs = Math.min(openThesisLegs + 1, maxOpenThesisLegs);
       positionRiskPct = fullRiskPct;
       thesisStage = 2;
@@ -1685,10 +1709,11 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
 
     if (flatEntryReady) {
       const code = `${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`;
-      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `${triggerSide === 1 ? "L" : "S"} ${code}`, action: "entry", price: candle.close, detail: `${entryMode} ${triggerText}`, size: 1 });
+      const entryFillPrice = applyStrategySlippage(candle.close, triggerSide);
+      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `${triggerSide === 1 ? "L" : "S"} ${code}`, action: "entry", price: entryFillPrice, triggerPrice: candle.close, detail: `${entryMode} ${triggerText}`, size: 1 });
       positionSide = triggerSide;
       positionQty = entryQty;
-      positionAvgPrice = candle.close;
+      positionAvgPrice = entryFillPrice;
       pendingStopAnchor = triggerStop;
       pendingTrailRef = triggerStopRef;
       pendingRiskPct = entryRiskPct;
@@ -2808,6 +2833,7 @@ class SingleFramePanel {
         text: order.text,
         action: order.action,
         price: order.price,
+        triggerPrice: order.triggerPrice,
         detail: order.detail,
         position: order.position
       })));

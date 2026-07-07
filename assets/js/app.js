@@ -488,7 +488,11 @@ const STRATEGY_INPUTS = {
   h4FormTrailLookback: 11,
   h4SwingSlBuffer: 500,
   h4SwingTrailAfterOneR: true,
-  useStructureConfirmedH4SwingTrail: true
+  useStructureConfirmedH4SwingTrail: true,
+  allowPromotionScaleIn: false,
+  allowContinuationAddAfterBE: true,
+  maxContinuationAddsPerThesis: 1,
+  allowRiskRecycleAdd: true
 };
 
 const SEM = {
@@ -858,6 +862,10 @@ function triggerLabel(tfName, lane, side, code) {
   return `${tfName}/${lane}/${side === 1 ? "B" : "S"}${Math.abs(code) === 4 ? "2" : "3"}`;
 }
 
+function thesisFrameLabel(level) {
+  return level === 3 ? "D1" : level === 2 ? "H12" : level === 1 ? "H4" : "NONE";
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1033,6 +1041,11 @@ function computeFramePacks(candles) {
       entryShortStopRef: STRATEGY_INPUTS.enableH4SwingTrail ? `H4SWING+${STRATEGY_INPUTS.h4SwingSlBuffer}` : "SETUP",
       longTrailFormEvent: buy2ClassicEvent || buy3ClassicEvent,
       shortTrailFormEvent: sell2ClassicEvent || sell3ClassicEvent,
+      buy2ClassicEvent,
+      sell2ClassicEvent,
+      buy3ClassicEvent,
+      sell3ClassicEvent,
+      noiseState,
       trap,
       semanticState,
       rsi: row.rsi,
@@ -1075,12 +1088,19 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   let positionStopAnchor = null;
   let positionActiveStop = null;
   let positionTrailRef = "-";
+  let positionRiskPct = null;
   let pendingStopAnchor = null;
   let pendingTrailRef = "-";
   let pendingRiskPct = null;
+  let thesisStage = 0;
   let thesisFrameLevel = 0;
   let thesisRequiredTier = 0;
   let thesisBrokenBars = 0;
+  let lastPromotionAddLevel = 0;
+  let continuationAddsH4 = 0;
+  let continuationAddsH12 = 0;
+  let continuationAddsD1 = 0;
+  let openThesisLegs = 0;
   let postThesisBreakLockActive = false;
   let postThesisBreakBlockedSide = 0;
   let postThesisBreakFrameLevel = 0;
@@ -1102,12 +1122,19 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     positionStopAnchor = null;
     positionActiveStop = null;
     positionTrailRef = "-";
+    positionRiskPct = null;
     pendingStopAnchor = null;
     pendingTrailRef = "-";
     pendingRiskPct = null;
+    thesisStage = 0;
     thesisFrameLevel = 0;
     thesisRequiredTier = 0;
     thesisBrokenBars = 0;
+    lastPromotionAddLevel = 0;
+    continuationAddsH4 = 0;
+    continuationAddsH12 = 0;
+    continuationAddsD1 = 0;
+    openThesisLegs = 0;
     confirmedFormLongLow = null;
     confirmedFormShortHigh = null;
     lastPositionEntryIndex = null;
@@ -1137,6 +1164,17 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     });
     lastExitIndex = index;
     resetPositionState();
+  }
+
+  function addToPosition(qty, price) {
+    if (positionQty <= 0 || positionAvgPrice == null) {
+      positionQty = qty;
+      positionAvgPrice = price;
+      return;
+    }
+    const nextQty = positionQty + qty;
+    positionAvgPrice = (positionAvgPrice * positionQty + price * qty) / nextQty;
+    positionQty = nextQty;
   }
 
   for (let index = 0; index < h4Candles.length; index += 1) {
@@ -1244,13 +1282,17 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const entryMode = qualityOk ? entryModePreQuality : softLowQualitySetup ? "PARTIAL ONLY" : "NO-TRADE";
     const actionableEntry = entryMode === "PARTIAL ONLY" || entryMode === "FULL ENTRY";
 
+    let promotedToH12 = false;
+    let promotedToD1 = false;
     if (positionSide !== 0 && thesisFrameLevel < 2 && semanticFamilySide(h12.semanticState) === positionSide && semanticTriggerTier(h12.semanticState) >= 2) {
       thesisFrameLevel = 2;
       thesisRequiredTier = Math.max(thesisRequiredTier, 2);
+      promotedToH12 = true;
     }
     if (positionSide !== 0 && thesisFrameLevel === 2 && semanticFamilySide(d1.semanticState) === positionSide && semanticTriggerTier(d1.semanticState) >= 2) {
       thesisFrameLevel = 3;
       thesisRequiredTier = Math.max(thesisRequiredTier, 2);
+      promotedToD1 = true;
     }
     const thesisState = thesisFrameLevel === 3 ? d1.semanticState : thesisFrameLevel === 2 ? h12.semanticState : thesisFrameLevel === 1 ? current.semanticState : SEM.INIT;
     const thesisSide = thesisFrameLevel === 3 ? semanticFamilySide(d1.semanticState) : thesisFrameLevel === 2 ? semanticFamilySide(h12.semanticState) : thesisFrameLevel === 1 ? semanticFamilySide(current.semanticState) : 0;
@@ -1309,7 +1351,83 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const entryRiskAmount = entryRiskPct != null ? equity * entryRiskPct / 100 : null;
     const entryQtyRaw = validTriggerStop && entryRiskAmount != null ? entryRiskAmount / riskPerUnit : null;
     const entryQty = entryQtyRaw != null ? Math.min(entryQtyRaw, maxQty) : null;
-    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && !postThesisBreakSameSideBlocked && positionSide === 0 && entryQty != null && entryQty > 0;
+    const promotionTargetLevel = promotedToD1 ? 3 : promotedToH12 ? 2 : 0;
+    const promotionTopUpSide = STRATEGY_INPUTS.allowPromotionScaleIn && promotionTargetLevel > 0 ? positionSide : 0;
+    const currentThesisAddLevel = thesisFrameLevel >= 3 ? 3 : thesisFrameLevel >= 2 ? 2 : 1;
+    const continuationAddsUsed = currentThesisAddLevel === 3 ? continuationAddsD1 : currentThesisAddLevel === 2 ? continuationAddsH12 : continuationAddsH4;
+    const continuationH4TriggerCode = positionSide === 1
+      ? current.buy3ClassicEvent ? 5 : current.buy2ClassicEvent ? 4 : 0
+      : positionSide === -1
+        ? current.sell3ClassicEvent ? -5 : current.sell2ClassicEvent ? -4 : 0
+        : 0;
+    const continuationH4TriggerText = continuationH4TriggerCode === 5 ? "H4/cont/B3"
+      : continuationH4TriggerCode === 4 ? "H4/cont/B2"
+        : continuationH4TriggerCode === -5 ? "H4/cont/S3"
+          : continuationH4TriggerCode === -4 ? "H4/cont/S2"
+            : "none";
+    const stopLockedBeyondEntry = positionSide === 1 && positionActiveStop != null && positionAvgPrice != null
+      ? positionActiveStop >= positionAvgPrice
+      : positionSide === -1 && positionActiveStop != null && positionAvgPrice != null
+        ? positionActiveStop <= positionAvgPrice
+        : false;
+    const continuationNoiseBlocked = current.noiseState && thesisFrameLevel <= 1 && !STRATEGY_CONFIG.ignoreH4NoiseGate;
+    const continuationTopUpIntent = STRATEGY_INPUTS.allowContinuationAddAfterBE && positionSide !== 0 && continuationH4TriggerCode !== 0 && continuationAddsUsed < STRATEGY_INPUTS.maxContinuationAddsPerThesis && !continuationNoiseBlocked && mtfState !== "MTF_STRONG_CONFLICT";
+    const continuationTopUpSignal = continuationTopUpIntent && stopLockedBeyondEntry;
+    const topUpSignalSide = promotionTopUpSide !== 0 || continuationTopUpSignal ? positionSide : triggerSide;
+    const sameSideTopUpContext = positionSide !== 0 && topUpSignalSide === positionSide;
+    const currentPositionRiskPerUnit = sameSideTopUpContext && positionActiveStop != null ? (topUpSignalSide === 1 ? candle.close - positionActiveStop : positionActiveStop - candle.close) : null;
+    const currentPositionRiskAmount = sameSideTopUpContext && currentPositionRiskPerUnit != null && currentPositionRiskPerUnit > 0 ? Math.abs(positionQty) * currentPositionRiskPerUnit : null;
+    const fullRiskAmount = equity * fullRiskPct / 100;
+    const promotionTopUpIntent = STRATEGY_INPUTS.allowPromotionScaleIn && sameSideTopUpContext && promotionTargetLevel > 0 && promotionTargetLevel > lastPromotionAddLevel && mtfState !== "MTF_STRONG_CONFLICT";
+    const promotionTopUpSignal = promotionTopUpIntent && stopLockedBeyondEntry;
+    const standardTopUpRiskAmount = sameSideTopUpContext && currentPositionRiskAmount != null ? Math.max(fullRiskAmount - currentPositionRiskAmount, 0) : null;
+    const recycleTopUpRiskAmount = (continuationTopUpSignal || promotionTopUpSignal) && STRATEGY_INPUTS.allowRiskRecycleAdd ? fullRiskAmount : null;
+    const topUpRiskAmount = recycleTopUpRiskAmount != null ? recycleTopUpRiskAmount : standardTopUpRiskAmount;
+    const topUpRiskPct = topUpRiskAmount != null && equity > 0 ? topUpRiskAmount / equity * 100 : null;
+    const topUpRiskPerUnit = sameSideTopUpContext && positionActiveStop != null ? (topUpSignalSide === 1 ? candle.close - positionActiveStop : positionActiveStop - candle.close) : null;
+    const availableTopUpQty = Math.max(maxQty - Math.abs(positionQty), 0);
+    const topUpQtyRaw = sameSideTopUpContext && topUpRiskPerUnit != null && topUpRiskPerUnit > 0 && topUpRiskAmount != null && topUpRiskAmount > 0 ? topUpRiskAmount / topUpRiskPerUnit : null;
+    const topUpQty = topUpQtyRaw != null ? Math.min(topUpQtyRaw, availableTopUpQty) : null;
+    const topUpPyramidOk = openThesisLegs < maxOpenThesisLegs;
+    const topUpCapacityOk = availableTopUpQty > 0;
+    const topUpHasQty = topUpQty != null && topUpQty > 0;
+    const continuationTopUpReady = continuationTopUpSignal && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk;
+    const promotionTopUpReady = promotionTopUpSignal && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk;
+    const topUpReady = (promotionTopUpReady || continuationTopUpReady) && sameSideTopUpContext && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk && mtfState !== "MTF_STRONG_CONFLICT";
+    const topUpEntrySide = promotionTopUpReady ? positionSide : continuationTopUpReady ? positionSide : triggerSide;
+    const topUpTriggerText = promotionTopUpReady ? `${thesisFrameLabel(promotionTargetLevel)}/promote` : continuationTopUpReady ? `${thesisFrameLabel(currentThesisAddLevel)}/${continuationH4TriggerText}` : triggerText;
+    const topUpCommentPrefix = promotionTopUpReady ? "Promote " : continuationTopUpReady ? "Continue " : "ThesisFull ";
+    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && !postThesisBreakSameSideBlocked && positionSide === 0 && !topUpReady && entryQty != null && entryQty > 0;
+
+    if (topUpReady && topUpEntrySide !== 0 && topUpQty != null && topUpQty > 0) {
+      const code = `${topUpEntrySide === 1 ? "B" : "S"}${Math.abs(continuationH4TriggerCode || triggerCode) === 4 ? "2" : "3"}`;
+      orders.push({
+        time: candle.time,
+        position: topUpEntrySide === 1 ? "belowBar" : "aboveBar",
+        color: topUpEntrySide === 1 ? "#57d16b" : "#ff7a7a",
+        shape: topUpEntrySide === 1 ? "arrowUp" : "arrowDown",
+        text: `ADD ${code}`,
+        action: "entry",
+        price: candle.close,
+        detail: `${topUpCommentPrefix}${topUpTriggerText} ${topUpRiskPct.toFixed(1)}%`,
+        size: 1
+      });
+      addToPosition(topUpQty, candle.close);
+      openThesisLegs = Math.min(openThesisLegs + 1, maxOpenThesisLegs);
+      positionRiskPct = fullRiskPct;
+      thesisStage = 2;
+      thesisFrameLevel = Math.max(thesisFrameLevel, promotionTopUpReady ? promotionTargetLevel : currentThesisAddLevel);
+      thesisRequiredTier = Math.max(thesisRequiredTier, 2);
+      thesisBrokenBars = 0;
+      lastPositionEntryIndex = index;
+      if (promotionTopUpReady) lastPromotionAddLevel = Math.max(lastPromotionAddLevel, promotionTargetLevel);
+      if (continuationTopUpReady) {
+        if (currentThesisAddLevel === 3) continuationAddsD1 += 1;
+        else if (currentThesisAddLevel === 2) continuationAddsH12 += 1;
+        else continuationAddsH4 += 1;
+      }
+      if (triggerTf === "H12") lastProcessedH12TriggerTime = h12.triggerTime;
+    }
 
     if (flatEntryReady) {
       const code = `${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`;
@@ -1323,12 +1441,19 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       positionStopAnchor = pendingStopAnchor;
       positionActiveStop = pendingStopAnchor;
       positionTrailRef = pendingTrailRef;
+      positionRiskPct = pendingRiskPct == null ? fullRiskPct : pendingRiskPct;
       pendingStopAnchor = null;
       pendingTrailRef = "-";
       pendingRiskPct = null;
+      thesisStage = entryMode === "FULL ENTRY" ? 2 : 1;
       thesisFrameLevel = 1;
       thesisRequiredTier = 2;
       thesisBrokenBars = 0;
+      lastPromotionAddLevel = 0;
+      continuationAddsH4 = 0;
+      continuationAddsH12 = 0;
+      continuationAddsD1 = 0;
+      openThesisLegs = 1;
       lastPositionEntryIndex = index;
       pendingReverseSide = 0;
       pendingReverseIndex = null;
@@ -2161,7 +2286,8 @@ class RsiOnlyPanel {
 
 class SingleFramePanel {
   constructor() {
-    this.config = SINGLE_FRAMES.find((frame) => frame.key === (localStorage.getItem("singleFrameTf") || "h12")) || SINGLE_FRAMES[3];
+    const requestedTf = normalizeSingleTfKey(queryParams().get("singleTf")) || localStorage.getItem("singleFrameTf") || "h12";
+    this.config = SINGLE_FRAMES.find((frame) => frame.key === requestedTf) || SINGLE_FRAMES[3];
     this.rawCandles = [];
     this.candles = [];
     this.ws = null;
@@ -2645,6 +2771,36 @@ function normalizeTfKey(value) {
   if (["1d", "d1", "daily"].includes(normalized)) return "d1";
   if (["2d", "d2"].includes(normalized)) return "d2";
   return "";
+}
+
+function normalizeSingleTfKey(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  const aliases = {
+    "1h": "h1",
+    h1: "h1",
+    "2h": "h2",
+    h2: "h2",
+    "4h": "h4",
+    h4: "h4",
+    "12h": "h12",
+    h12: "h12",
+    "1d": "d1",
+    d1: "d1",
+    daily: "d1",
+    "2d": "d2",
+    d2: "d2",
+    "3d": "d3",
+    d3: "d3",
+    w: "w1",
+    "1w": "w1",
+    w1: "w1",
+    "2w": "w2",
+    w2: "w2",
+    m: "m1",
+    "1m": "m1",
+    m1: "m1"
+  };
+  return aliases[normalized] || "";
 }
 
 function applyInitialTimeframeFocus() {

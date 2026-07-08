@@ -276,6 +276,17 @@ function d2BackgroundData(statusHistory) {
   }));
 }
 
+function shouldShowStopPlots() {
+  return STRATEGY_INPUTS.showStopPlots || queryParams().get("showStopPlots") === "1";
+}
+
+function stopPlotData(statusHistory, side) {
+  if (!shouldShowStopPlots()) return [];
+  return statusHistory
+    .filter((status) => status.positionSide === side && Number.isFinite(status.positionActiveStop))
+    .map((status) => ({ time: status.time, value: status.positionActiveStop }));
+}
+
 function loadTradeHistory() {
   try {
     const parsed = JSON.parse(localStorage.getItem(TRADE_HISTORY_STORAGE_KEY) || "[]");
@@ -623,7 +634,8 @@ const STRATEGY_INPUTS = {
   maxContinuationAddsPerThesis: 1,
   thesisBreakConfirmBars: 2,
   allowRiskRecycleAdd: true,
-  showBackground: true
+  showBackground: true,
+  showStopPlots: false
 };
 
 const SEM = {
@@ -2786,6 +2798,24 @@ class SingleFramePanel {
       lastValueVisible: false,
       priceLineVisible: false
     });
+    this.longStopSeries = this.rsiChart.addLineSeries({
+      color: "rgba(255,77,90,0.70)",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Solid,
+      priceScaleId: "stop",
+      title: "Long Stop",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.shortStopSeries = this.rsiChart.addLineSeries({
+      color: "rgba(255,77,90,0.70)",
+      lineWidth: 1,
+      lineStyle: LightweightCharts.LineStyle.Solid,
+      priceScaleId: "stop",
+      title: "Short Stop",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
     this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#f2f2f2", lineWidth: 2 }));
     this.rsiEmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#ff9800", lineWidth: 2 }));
     this.rsiWmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#ff3045", lineWidth: 2 }));
@@ -3066,6 +3096,10 @@ class SingleFramePanel {
         position: item.position,
         shape: item.shape
       })));
+      document.body.dataset.singleStopPlotsDebug = JSON.stringify({
+        long: stopPlotData(parityCore?.status?.history || [], 1),
+        short: stopPlotData(parityCore?.status?.history || [], -1)
+      });
     }
     if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, orderSource);
     const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? orderSource.filter((order) => order.action === "entry").at(-1) : null;
@@ -3122,6 +3156,8 @@ class SingleFramePanel {
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
     this.rsiD2BgSeries.setData(parityCore ? d2BackgroundData(parityCore.status.history) : []);
+    this.longStopSeries.setData(parityCore ? stopPlotData(parityCore.status.history, 1) : []);
+    this.shortStopSeries.setData(parityCore ? stopPlotData(parityCore.status.history, -1) : []);
     this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);

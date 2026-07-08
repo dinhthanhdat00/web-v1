@@ -616,6 +616,7 @@ const STRATEGY_INPUTS = {
   fullRiskPct: 2.0,
   maxLeverage: 1.0,
   capitalUsageCapPct: 50.0,
+  commissionPct: 0.02,
   slippageTicks: 2,
   priceTick: 0.01,
   enableH4SwingTrail: true,
@@ -1280,6 +1281,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   const fullRiskPct = STRATEGY_INPUTS.fullRiskPct;
   const maxLeverage = STRATEGY_INPUTS.maxLeverage;
   const capitalUsageCapPct = STRATEGY_INPUTS.capitalUsageCapPct;
+  const commissionPct = STRATEGY_INPUTS.commissionPct;
   const maxOpenThesisLegs = 6;
   let equity = initialEquity;
   let positionSide = 0;
@@ -1358,9 +1360,12 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
   function closePosition(index, price, detail, markerText = "OUT") {
     const candle = h4Candles[index];
     const fillPrice = applyStrategySlippage(price, -positionSide);
+    let commission = 0;
     if (positionSide !== 0 && positionQty > 0 && positionAvgPrice != null) {
       const gross = positionSide === 1 ? (fillPrice - positionAvgPrice) * positionQty : (positionAvgPrice - fillPrice) * positionQty;
+      commission = fillCommission(fillPrice, positionQty);
       equity += gross;
+      equity -= commission;
     }
     orders.push({
       time: candle.time,
@@ -1371,6 +1376,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       action: "exit",
       price: fillPrice,
       triggerPrice: price,
+      qty: positionQty,
+      commission,
+      equity,
       detail,
       size: 1
     });
@@ -1387,6 +1395,17 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const nextQty = positionQty + qty;
     positionAvgPrice = (positionAvgPrice * positionQty + price * qty) / nextQty;
     positionQty = nextQty;
+  }
+
+  function fillCommission(price, qty) {
+    if (!Number.isFinite(price) || !Number.isFinite(qty) || qty <= 0) return 0;
+    return price * qty * commissionPct / 100;
+  }
+
+  function applyEntryCommission(price, qty) {
+    const commission = fillCommission(price, qty);
+    equity -= commission;
+    return commission;
   }
 
   function applyStrategySlippage(price, direction) {
@@ -1864,6 +1883,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     if (topUpReady && topUpEntrySide !== 0 && topUpQty != null && topUpQty > 0) {
       const code = `${topUpEntrySide === 1 ? "B" : "S"}${Math.abs(continuationH4TriggerCode || triggerCode) === 4 ? "2" : "3"}`;
       const topUpFillPrice = applyStrategySlippage(candle.close, topUpEntrySide);
+      const topUpCommission = applyEntryCommission(topUpFillPrice, topUpQty);
       orders.push({
         time: candle.time,
         position: topUpEntrySide === 1 ? "belowBar" : "aboveBar",
@@ -1873,6 +1893,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
         action: "entry",
         price: topUpFillPrice,
         triggerPrice: candle.close,
+        qty: topUpQty,
+        commission: topUpCommission,
+        equity,
         detail: `${topUpCommentPrefix}${topUpTriggerText} ${topUpRiskPct.toFixed(1)}%`,
         size: 1
       });
@@ -1896,7 +1919,8 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     if (flatEntryReady) {
       const code = `${triggerSide === 1 ? "B" : "S"}${Math.abs(triggerCode) === 4 ? "2" : "3"}`;
       const entryFillPrice = applyStrategySlippage(candle.close, triggerSide);
-      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `${triggerSide === 1 ? "L" : "S"} ${code}`, action: "entry", price: entryFillPrice, triggerPrice: candle.close, detail: `${entryMode} ${triggerText}`, size: 1 });
+      const entryCommission = applyEntryCommission(entryFillPrice, entryQty);
+      orders.push({ time: candle.time, position: triggerSide === 1 ? "belowBar" : "aboveBar", color: triggerSide === 1 ? "#304cff" : "#d000ff", shape: triggerSide === 1 ? "arrowUp" : "arrowDown", text: `${triggerSide === 1 ? "L" : "S"} ${code}`, action: "entry", price: entryFillPrice, triggerPrice: candle.close, qty: entryQty, commission: entryCommission, equity, detail: `${entryMode} ${triggerText}`, size: 1 });
       positionSide = triggerSide;
       positionQty = entryQty;
       positionAvgPrice = entryFillPrice;
@@ -3071,6 +3095,9 @@ class SingleFramePanel {
         action: order.action,
         price: order.price,
         triggerPrice: order.triggerPrice,
+        qty: order.qty,
+        commission: order.commission,
+        equity: order.equity,
         detail: order.detail,
         position: order.position
       })));

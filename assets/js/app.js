@@ -267,6 +267,15 @@ function parityTone(value) {
   return "muted";
 }
 
+function d2BackgroundData(statusHistory) {
+  if (!STRATEGY_INPUTS.showBackground) return [];
+  return statusHistory.map((status) => ({
+    time: status.time,
+    value: status.d2Bias === 1 || status.d2Bias === -1 ? 100 : 0,
+    color: status.d2Bias === 1 ? "rgba(76,175,80,0.10)" : status.d2Bias === -1 ? "rgba(255,77,90,0.12)" : "rgba(0,0,0,0)"
+  }));
+}
+
 function loadTradeHistory() {
   try {
     const parsed = JSON.parse(localStorage.getItem(TRADE_HISTORY_STORAGE_KEY) || "[]");
@@ -613,7 +622,8 @@ const STRATEGY_INPUTS = {
   allowContinuationAddAfterBE: true,
   maxContinuationAddsPerThesis: 1,
   thesisBreakConfirmBars: 2,
-  allowRiskRecycleAdd: true
+  allowRiskRecycleAdd: true,
+  showBackground: true
 };
 
 const SEM = {
@@ -1601,6 +1611,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
         h12Bias: h12.bias,
         mtfState,
         d2Regime,
+        d2Bias: d2.bias,
         triggerText,
         triggerTf,
         entryMode,
@@ -1634,6 +1645,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
         h12Bias: h12.bias,
         mtfState,
         d2Regime,
+        d2Bias: d2.bias,
         triggerText,
         triggerTf,
         entryMode,
@@ -1814,6 +1826,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       h12Bias: h12.bias,
       mtfState,
       d2Regime,
+      d2Bias: d2.bias,
       triggerText,
       triggerTf,
       triggerSide,
@@ -2767,6 +2780,12 @@ class SingleFramePanel {
     this.baselineSeries = this.priceChart.addLineSeries({ color: "#ffff00", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
     this.slowBaselineSeries = this.priceChart.addLineSeries({ color: "#9c27b0", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
     this.vwapSeries = this.priceChart.addLineSeries({ color: "#f2f2f2", lineWidth: 2, title: "", lastValueVisible: false, priceLineVisible: false });
+    this.rsiD2BgSeries = this.rsiChart.addHistogramSeries({
+      base: 0,
+      priceFormat: { type: "price", precision: 0, minMove: 1 },
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
     this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#f2f2f2", lineWidth: 2 }));
     this.rsiEmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#ff9800", lineWidth: 2 }));
     this.rsiWmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({ color: "#ff3045", lineWidth: 2 }));
@@ -3031,6 +3050,7 @@ class SingleFramePanel {
         h12Bias: status.h12Bias,
         mtfState: status.mtfState,
         d2Regime: status.d2Regime,
+        d2Bias: status.d2Bias,
         triggerText: status.triggerText,
         entryActionText: status.entryActionText,
         entryReasonCode: status.entryReasonCode,
@@ -3101,6 +3121,7 @@ class SingleFramePanel {
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+    this.rsiD2BgSeries.setData(parityCore ? d2BackgroundData(parityCore.status.history) : []);
     this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);

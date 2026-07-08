@@ -677,6 +677,7 @@ const STRATEGY_INPUTS = {
   priceTick: 0.01,
   enableH4SwingTrail: true,
   h4SwingPivotBars: 50,
+  h4SwingTrailPivotBars: 5,
   h4FormTrailLookback: 11,
   h4SwingSlBuffer: 500,
   h4SwingTrailAfterOneR: true,
@@ -687,13 +688,21 @@ const STRATEGY_INPUTS = {
   nonConsensusCooldownBars: 3,
   requireFreshTriggerAfterNonConsensus: true,
   htfReadinessLookback: 12,
+  mtfMode: "context",
   allowH4EarlyD2Override: true,
   useStructureConfirmedH4SwingTrail: true,
+  executeOnlyOnH4Close: true,
+  allowRealtimeCurrentTfEntries: true,
+  enableProgressiveHold: true,
   allowPromotionScaleIn: false,
   allowContinuationAddAfterBE: true,
   maxContinuationAddsPerThesis: 1,
   thesisBreakConfirmBars: 2,
   allowRiskRecycleAdd: true,
+  showSignalLabels: true,
+  showWmaWarnings: true,
+  showSemanticDebug: false,
+  showSemanticTransitionMarkers: false,
   showBackground: true,
   showStopPlots: false
 };
@@ -1204,24 +1213,25 @@ function computeFramePacks(candles) {
     const sellIIEvent = sellPointsAllowed && side === -1 && point === 1 && sellConverging && (rsiPeakVal != null || spreadShrinking);
     const buy1Event = buyPointsAllowed && side === 1 && point === 2 && emaCrossUp && row.rsi < row.wma && !noiseState;
     const sell1Event = sellPointsAllowed && side === -1 && point === 2 && emaCrossDown && row.rsi > row.wma && !noiseState;
-    const buy2DirectFromI = buyPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && index > (stateBar ?? -1) && row.rsi > row.ema && row.rsi < row.wma && !noiseState;
-    const sell2DirectFromI = sellPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState;
-    const buy2Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && row.rsi > row.ema && row.rsi < row.wma && !noiseState && point >= 3;
-    const sell2Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState && point >= 3;
+    const strictForm = STRATEGY_CONFIG.requireStrictFormSequence;
+    const buy2DirectFromI = buyPointsAllowed && !strictForm && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && index > (stateBar ?? -1) && row.rsi > row.ema && row.rsi < row.wma && !noiseState;
+    const sell2DirectFromI = sellPointsAllowed && !strictForm && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState;
+    const buy2Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && row.rsi > row.ema && row.rsi < row.wma && !noiseState && (strictForm ? point === 3 : point >= 3);
+    const sell2Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState && (strictForm ? point === 3 : point >= 3);
     const buy2SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_2 && semanticState !== SEM.BUY_2 && index > (stateBar ?? -1) && !noiseState;
     const sell2SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_2 && semanticState !== SEM.SELL_2 && index > (stateBar ?? -1) && !noiseState;
     buy2Condition[index] = buy2Candidate || buy2SemanticCandidate;
     sell2Condition[index] = sell2Candidate || sell2SemanticCandidate;
     const buy2Event = freshAt(buy2Condition, index) || buy2DirectFromI;
     const sell2Event = freshAt(sell2Condition, index) || sell2DirectFromI;
-    const buy3DirectFromII = buyPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && buyIIEvent && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
-    const sell3DirectFromII = sellPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && sellIIEvent && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
-    const buy3WindowFromII = buyPointsAllowed && side === 1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossUpFlags, index) >= 0 && barssince(wmaCrossUpFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
-    const sell3WindowFromII = sellPointsAllowed && side === -1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossDownFlags, index) >= 0 && barssince(wmaCrossDownFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
-    const buy3Impulse = buyPointsAllowed && side === 1 && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
-    const sell3Impulse = sellPointsAllowed && side === -1 && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
-    const buy3Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && !noiseState && (point >= 3 && wmaCrossUp || buy3WindowFromII);
-    const sell3Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && !noiseState && (point >= 3 && wmaCrossDown || sell3WindowFromII);
+    const buy3DirectFromII = buyPointsAllowed && !strictForm && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && buyIIEvent && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3DirectFromII = sellPointsAllowed && !strictForm && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && sellIIEvent && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3WindowFromII = buyPointsAllowed && !strictForm && side === 1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossUpFlags, index) >= 0 && barssince(wmaCrossUpFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3WindowFromII = sellPointsAllowed && !strictForm && side === -1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossDownFlags, index) >= 0 && barssince(wmaCrossDownFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3Impulse = buyPointsAllowed && !strictForm && side === 1 && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3Impulse = sellPointsAllowed && !strictForm && side === -1 && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && !noiseState && (((strictForm ? point === 4 : point >= 3) && wmaCrossUp) || buy3WindowFromII);
+    const sell3Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && !noiseState && (((strictForm ? point === 4 : point >= 3) && wmaCrossDown) || sell3WindowFromII);
     const buy3SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_3 && semanticState !== SEM.BUY_3 && index > (stateBar ?? -1) && !noiseState;
     const sell3SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_3 && semanticState !== SEM.SELL_3 && index > (stateBar ?? -1) && !noiseState;
     buy3Condition[index] = buy3Candidate || buy3SemanticCandidate;
@@ -1262,7 +1272,7 @@ function computeFramePacks(candles) {
     const trap = trapCode(row.rsi, noiseState);
     const stateAgeBars = stateBar == null ? 0 : index - stateBar;
     semanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, trap, buyConverging, sellConverging, row.rsi, row.ema, row.wma, stateAgeBars);
-    const triggerCode = buy2Event ? 4 : buy3Event ? 5 : sell2Event ? -4 : sell3Event ? -5 : 0;
+    const triggerCode = strictForm ? buy3Event ? 5 : sell3Event ? -5 : 0 : buy2Event ? 4 : buy3Event ? 5 : sell2Event ? -4 : sell3Event ? -5 : 0;
     const readinessScore = htfReadinessScore(row.rsi, row.ema, row.wma, spread, spreadEma[index], betweenBoth);
     packs.push({
       time: candle.time,
@@ -1622,8 +1632,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const triggerTrapWait = h12TrapAgainstTrigger || currentTrapAgainstTrigger;
     const h4NoiseWait = h4NoiseSuppressCurrent && !STRATEGY_CONFIG.ignoreH4NoiseGate && !h12UsableTrigger;
     const hasTrigger = h12UsableTrigger || currentUsableTrigger;
-    const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
-    const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
+    const mtfMode = STRATEGY_INPUTS.mtfMode;
+    const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfMode === "off" ? hasTrigger ? "MTF_D2_NEUTRAL" : "MTF_NO_TRIGGER" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
+    const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : mtfMode === "off" ? hasTrigger ? "PARTIAL ONLY" : "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
     const h4D2SoftProbe = triggerTf === "H4" && oppositeOther && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
     const h4D2Override = STRATEGY_INPUTS.allowH4EarlyD2Override && triggerTf === "H4" && hasTrigger && d2Regime === "D2_OPPOSE" && readinessAllowsEarlyCounter && !strongConflict && !triggerTrapWait;
     const entryModePreQuality = h12ReadinessBlocked ? "NO-TRADE" : h4D2SoftProbe || h4D2Override ? "PARTIAL ONLY" : triggerTf === "H4" && baseEntryMode === "FULL ENTRY" ? "PARTIAL ONLY" : baseEntryMode;
@@ -1660,12 +1671,13 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
 
     let promotedToH12 = false;
     let promotedToD1 = false;
-    if (positionSide !== 0 && thesisFrameLevel < 2 && semanticFamilySide(h12.semanticState) === positionSide && semanticTriggerTier(h12.semanticState) >= 2) {
+    const progressiveHoldEnabled = STRATEGY_INPUTS.enableProgressiveHold;
+    if (progressiveHoldEnabled && positionSide !== 0 && thesisFrameLevel < 2 && semanticFamilySide(h12.semanticState) === positionSide && semanticTriggerTier(h12.semanticState) >= 2) {
       thesisFrameLevel = 2;
       thesisRequiredTier = Math.max(thesisRequiredTier, 2);
       promotedToH12 = true;
     }
-    if (positionSide !== 0 && thesisFrameLevel === 2 && semanticFamilySide(d1.semanticState) === positionSide && semanticTriggerTier(d1.semanticState) >= 2) {
+    if (progressiveHoldEnabled && positionSide !== 0 && thesisFrameLevel === 2 && semanticFamilySide(d1.semanticState) === positionSide && semanticTriggerTier(d1.semanticState) >= 2) {
       thesisFrameLevel = 3;
       thesisRequiredTier = Math.max(thesisRequiredTier, 2);
       promotedToD1 = true;
@@ -1684,12 +1696,12 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       : thesisFrameLevel === 2
         ? thesisBreakBarsRequiredFromTime(candle.time, 12 * 60 * 60, STRATEGY_INPUTS.thesisBreakConfirmBars)
         : STRATEGY_INPUTS.thesisBreakConfirmBars;
-    const thesisBrokenConfirmed = thesisBrokenSignal && thesisBrokenBars >= thesisBreakRequiredBars;
+    const thesisBrokenConfirmed = progressiveHoldEnabled && thesisBrokenSignal && thesisBrokenBars >= thesisBreakRequiredBars;
     const thesisBrokenReason = thesisFamilyBroken ? (thesisFrameLevel === 3 ? "d1_thesis_broken" : thesisFrameLevel === 2 ? "h12_thesis_broken" : "h4_thesis_broken") : thesisStrengthBroken ? (thesisFrameLevel === 3 ? "d1_thesis_lost_tier" : thesisFrameLevel === 2 ? "h12_thesis_lost_tier" : "h4_thesis_lost_tier") : "-";
     const oppositePosition = positionSide !== 0 && triggerSide === -positionSide;
     const reverseAllowedByThesis = thesisFrameLevel <= 1 ? triggerTf === "H4" || triggerTf === "H12" : thesisFrameLevel === 2 ? triggerTf === "H12" : false;
-    const reverseActionableSignal = actionableEntry && triggerSide !== 0 && oppositePosition && thesisBrokenConfirmed && reverseAllowedByThesis;
-    const nonConsensusExit = positionSide !== 0 && thesisBrokenConfirmed && !reverseActionableSignal;
+    const reverseActionableSignal = progressiveHoldEnabled && actionableEntry && triggerSide !== 0 && oppositePosition && thesisBrokenConfirmed && reverseAllowedByThesis;
+    const nonConsensusExit = progressiveHoldEnabled && positionSide !== 0 && thesisBrokenConfirmed && !reverseActionableSignal;
 
     if (reverseActionableSignal) {
       const entryReasonCode = `REVERSE_PREP_${triggerSide === 1 ? "BUY" : "SELL"}`;

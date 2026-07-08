@@ -279,6 +279,7 @@ body {
 .swatch.orange { background: var(--orange); }
 .swatch.red { background: var(--red); }
 .swatch.green { background: var(--green); }
+.swatch.magenta { background: #ff4fd8; }
 
 .symbol-title {
   color: var(--white);

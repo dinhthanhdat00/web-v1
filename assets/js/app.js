@@ -56,6 +56,7 @@ const layerState = {
   rsi: true,
   rsiEma: true,
   rsiWma: true,
+  orders: true,
   signals: true
 };
 
@@ -196,8 +197,10 @@ function tradeTypeLabel(order) {
 
 function strategyOrderDisplayMarkers(orders) {
   return orders.map((order) => {
+    const code = String(order.text || "").match(/\b([LS])\s+([BS]\d)\b/);
+    const compactEntry = code ? `IN ${code[2]}` : "IN";
     const text = order.action === "entry"
-      ? String(order.text || "").startsWith("ADD") ? "ADD" : "IN"
+      ? String(order.text || "").startsWith("ADD") ? "ADD" : compactEntry
       : order.text === "SL" ? "SL" : "OUT";
     const isLongEntry = order.action === "entry" && order.position === "belowBar";
     const isShortEntry = order.action === "entry" && order.position === "aboveBar";
@@ -205,8 +208,8 @@ function strategyOrderDisplayMarkers(orders) {
     return {
       ...order,
       text,
-      size: isExit ? 2 : 1,
-      color: isExit ? "#ff4fd8" : isLongEntry ? "#3f5cff" : isShortEntry ? "#d000ff" : order.color
+      size: isExit ? 2 : 2,
+      color: isExit ? "#ff4fd8" : isLongEntry ? "#304cff" : isShortEntry ? "#d000ff" : order.color
     };
   });
 }
@@ -3052,6 +3055,7 @@ class SingleFramePanel {
       : null;
     const orderSource = parityCore ? parityCore.orders : strategyCore.orders;
     const signalMarkers = parityCore?.rsiMarkers || strategyCore.markers;
+    const orderDisplayMarkers = strategyOrderDisplayMarkers(orderSource);
     if (queryParams().has("debugStrategy")) {
       window.__singleStrategyDebug = {
         timeframe: this.config.label,
@@ -3069,6 +3073,15 @@ class SingleFramePanel {
         triggerPrice: order.triggerPrice,
         detail: order.detail,
         position: order.position
+      })));
+      document.body.dataset.singleOrderDisplayDebug = JSON.stringify(orderDisplayMarkers.map((order) => ({
+        time: order.time,
+        text: order.text,
+        action: order.action,
+        color: order.color,
+        shape: order.shape,
+        position: order.position,
+        size: order.size
       })));
       document.body.dataset.singleStatusDebug = JSON.stringify((parityCore?.status?.history || []).map((status) => ({
         time: status.time,
@@ -3150,7 +3163,7 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.signals ? strategyOrderDisplayMarkers(orderSource) : []);
+    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.orders ? orderDisplayMarkers : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);

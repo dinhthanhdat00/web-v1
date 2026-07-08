@@ -211,6 +211,62 @@ function strategyOrderDisplayMarkers(orders) {
   });
 }
 
+function displayD2Regime(value) {
+  if (value === "D2_SUPPORT") return "SUPPORT";
+  if (value === "D2_NEUTRAL") return "NEUTRAL";
+  if (value === "D2_OPPOSE") return "OPPOSE";
+  if (value === "D2_TRAP") return "TRAP";
+  return value || "-";
+}
+
+function displayMtfState(value) {
+  return String(value || "-").replace(/^MTF_/, "");
+}
+
+function displayActionText(value) {
+  const map = {
+    "NO-TRADE": "NO_ACTION",
+    "PARTIAL ONLY": "ENTRY_PARTIAL",
+    "FULL ENTRY": "ENTRY_FULL",
+    ADD_OK: "ADD_BOI",
+    TREND_HOLD: "HOLD_THESIS",
+    PULLBACK: "HOLD_PULLBACK",
+    H4_D2_GATE: "D2_GATE",
+    LOCK_WAIT: "BLOCK_STOP_UNLOCKED",
+    PYRAMID_WAIT: "BLOCK_PYRAMID",
+    CAP_WAIT: "BLOCK_CAP_USAGE",
+    ZERO_QTY: "BLOCK_ZERO_QTY",
+    TRAP_WAIT: "BLOCK_TRAP",
+    HTF_STRETCHED_WAIT: "BLOCK_H12_READY",
+    H4_NOISE_WAIT: "BLOCK_H4_NOISE",
+    WAIT_REENTRY: "BLOCK_REENTRY",
+    HTF_DUPLICATE: "BLOCK_DUP_H12",
+    THESIS_REBUILD_WAIT: "BLOCK_POST_BREAK",
+    LOW_QUALITY: "BLOCK_LOW_QUALITY",
+    SOFT_LOW_QUALITY: "ENTRY_SOFT",
+    INVALID_SL: "BLOCK_INVALID_SL",
+    INVALID_SL_FILL: "BLOCK_INVALID_SL",
+    NON_CONSENSUS_EXIT: "EXIT_NON_CONS",
+    NON_CONS_MONITOR: "THESIS_BREAK_WARN",
+    H4_WARNING: "H4_COUNTER_WARN"
+  };
+  return map[value] || value || "-";
+}
+
+function displayTriggerText(value) {
+  if (value === "none") return "NONE";
+  if (value === "H4/H12 conflict") return "H4_H12_CONFLICT";
+  return value || "-";
+}
+
+function parityTone(value) {
+  const text = String(value || "");
+  if (/BUY|LONG|SUPPORT|ENTRY|FULL|yes/.test(text)) return "buy";
+  if (/SELL|SHORT|TRAP|CONFLICT|INVALID|EXIT|OPPOSE/.test(text)) return "bad";
+  if (/WARN|WAIT|BLOCK|PARTIAL|PROBE|NEUTRAL|NO_ACTION|NO_TRIGGER|D2_GATE|LOCK/.test(text)) return "warn";
+  return "muted";
+}
+
 function loadTradeHistory() {
   try {
     const parsed = JSON.parse(localStorage.getItem(TRADE_HISTORY_STORAGE_KEY) || "[]");
@@ -931,6 +987,32 @@ function thesisFrameLabel(level) {
   return level === 3 ? "D1" : level === 2 ? "H12" : level === 1 ? "H4" : "NONE";
 }
 
+function thesisPanelLabel(stage, level) {
+  const stageText = stage === 2 ? "FULL" : stage === 1 ? "PROBE" : "NONE";
+  const frameText = level === 3 ? "D1" : level === 2 ? "H12" : level === 1 ? "H4" : "-";
+  return `${stageText} ${frameText}`;
+}
+
+function semanticStateShort(stateCode) {
+  if (stateCode === SEM.INIT) return "INIT";
+  if (stateCode === SEM.NEUTRAL_REARM) return "NTRM";
+  if (stateCode === SEM.BUY_I) return "BI";
+  if (stateCode === SEM.BUY_II) return "BII";
+  if (stateCode === SEM.BUY_1) return "B1";
+  if (stateCode === SEM.BUY_2) return "B2";
+  if (stateCode === SEM.BUY_3) return "B3";
+  if (stateCode === SEM.BUY_STALE) return "BSTL";
+  if (stateCode === SEM.BUY_TRAP_WAIT) return "BTRP";
+  if (stateCode === SEM.SELL_I) return "SI";
+  if (stateCode === SEM.SELL_II) return "SII";
+  if (stateCode === SEM.SELL_1) return "S1";
+  if (stateCode === SEM.SELL_2) return "S2";
+  if (stateCode === SEM.SELL_3) return "S3";
+  if (stateCode === SEM.SELL_STALE) return "SSTL";
+  if (stateCode === SEM.SELL_TRAP_WAIT) return "STRP";
+  return "INIT";
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1513,6 +1595,10 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       const entryReasonCode = `REVERSE_PREP_${triggerSide === 1 ? "BUY" : "SELL"}`;
       const entryReasonDetail = "close -> next bar";
       recordStatus(index, {
+        currentPanelState: semanticStateShort(current.semanticState),
+        currentBias: current.bias,
+        h12PanelState: semanticStateShort(h12.semanticState),
+        h12Bias: h12.bias,
         mtfState,
         d2Regime,
         triggerText,
@@ -1542,6 +1628,10 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       lastThesisBreakDetail = entryReasonDetail;
       lastThesisBreakIndex = index;
       recordStatus(index, {
+        currentPanelState: semanticStateShort(current.semanticState),
+        currentBias: current.bias,
+        h12PanelState: semanticStateShort(h12.semanticState),
+        h12Bias: h12.bias,
         mtfState,
         d2Regime,
         triggerText,
@@ -1718,6 +1808,10 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const panelStopPrice = positionSide !== 0 ? positionActiveStop : triggerStop;
     const panelStopRef = positionSide !== 0 ? positionTrailRef : triggerStopRef;
     recordStatus(index, {
+      currentPanelState: semanticStateShort(current.semanticState),
+      currentBias: current.bias,
+      h12PanelState: semanticStateShort(h12.semanticState),
+      h12Bias: h12.bias,
       mtfState,
       d2Regime,
       triggerText,
@@ -2642,6 +2736,7 @@ class SingleFramePanel {
     this.strategyDetailEl = document.querySelector('[data-role="single-strategy-detail"]');
     this.shellNode = document.querySelector(".single-shell");
     this.priceNode = document.querySelector('[data-role="single-price-chart"]');
+    this.parityPanelEl = document.querySelector('[data-role="single-parity-panel"]');
     this.rsiNode = document.querySelector('[data-role="single-rsi-chart"]');
     this.resizeHandle = document.querySelector('[data-role="single-rsi-resize"]');
     this.tfNode = $("singleTfButtons");
@@ -2867,6 +2962,30 @@ class SingleFramePanel {
     this.strategyDetailEl.textContent = strategy.detail;
   }
 
+  updateParityPanel(status) {
+    if (!this.parityPanelEl) return;
+    if (!status) {
+      this.parityPanelEl.innerHTML = "";
+      return;
+    }
+    const posText = status.positionSide === 1 ? "LONG" : status.positionSide === -1 ? "SHORT" : "FLAT";
+    const lockText = status.positionSide === 0 ? "no" : status.positionSide === 1 && status.positionActiveStop != null && status.positionAvgPrice != null && status.positionActiveStop >= status.positionAvgPrice ? "yes" : status.positionSide === -1 && status.positionActiveStop != null && status.positionAvgPrice != null && status.positionActiveStop <= status.positionAvgPrice ? "yes" : "no";
+    const rows = [
+      ["STATE", status.currentPanelState || "-", "BIAS", status.currentBias === 1 ? "buy_bias" : status.currentBias === -1 ? "sell_bias" : "neutral"],
+      ["H12", status.h12PanelState || "-", "D2", displayD2Regime(status.d2Regime)],
+      ["ACTION", displayActionText(status.entryActionText), "THESIS", thesisPanelLabel(status.thesisStage, status.thesisFrameLevel)],
+      ["TRIGGER", displayTriggerText(status.triggerText), "SL", status.panelStopText || "-"],
+      ["LOCK", lockText, "POS", posText],
+      ["REASON", status.panelReasonCode || status.entryReasonCode || "-", "MTF", displayMtfState(status.mtfState)]
+    ];
+    this.parityPanelEl.innerHTML = rows.flatMap(([a, b, c, d]) => [
+      `<span class="single-parity-cell single-parity-key">${escapeHtml(a)}</span>`,
+      `<span class="single-parity-cell single-parity-value ${parityTone(b)}" title="${escapeHtml(b)}">${escapeHtml(b)}</span>`,
+      `<span class="single-parity-cell single-parity-key">${escapeHtml(c)}</span>`,
+      `<span class="single-parity-cell single-parity-value ${parityTone(d)}" title="${escapeHtml(d)}">${escapeHtml(d)}</span>`
+    ]).join("");
+  }
+
   draw(fit = false) {
     const candles = this.candles;
     if (!candles.length) return;
@@ -2906,6 +3025,10 @@ class SingleFramePanel {
         time: status.time,
         index: status.index,
         positionSide: status.positionSide,
+        currentPanelState: status.currentPanelState,
+        currentBias: status.currentBias,
+        h12PanelState: status.h12PanelState,
+        h12Bias: status.h12Bias,
         mtfState: status.mtfState,
         d2Regime: status.d2Regime,
         triggerText: status.triggerText,
@@ -2997,6 +3120,7 @@ class SingleFramePanel {
     this.changeEl.textContent = `${change >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
     this.changeEl.className = change >= 0 ? "up" : "down";
     this.updateStrategyBadge(strategy);
+    this.updateParityPanel(parityCore?.status?.latest || null);
 
     if (fit) this.focusLatest();
   }

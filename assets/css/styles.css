@@ -600,12 +600,79 @@ body {
   background: rgba(47, 92, 255, 0.28);
 }
 
+.single-price-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
 .single-price-chart,
 .single-rsi-chart {
   width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
+}
+
+.single-parity-panel {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: auto minmax(86px, auto) auto minmax(76px, auto);
+  gap: 0;
+  min-width: 330px;
+  max-width: min(520px, calc(100% - 36px));
+  border: 1px solid rgba(103, 110, 130, 0.35);
+  background: rgba(43, 47, 62, 0.86);
+  color: #e9edf6;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.single-parity-panel:empty {
+  display: none;
+}
+
+.single-parity-cell {
+  min-width: 0;
+  padding: 4px 7px;
+  border-right: 1px solid rgba(120, 126, 146, 0.22);
+  border-bottom: 1px solid rgba(120, 126, 146, 0.16);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-parity-key {
+  color: #9aa2b5;
+}
+
+.single-parity-value {
+  color: #f5f7fb;
+}
+
+.single-parity-value.buy,
+.single-parity-value.good {
+  color: #54e182;
+}
+
+.single-parity-value.sell,
+.single-parity-value.bad {
+  color: #ff6b7a;
+}
+
+.single-parity-value.warn {
+  color: #ffa726;
+}
+
+.single-parity-value.muted {
+  color: #c2c8d7;
 }
 
 .single-rsi-chart {

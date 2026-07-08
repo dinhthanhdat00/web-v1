@@ -1,6 +1,8 @@
 const API = "https://api.binance.com";
 const WS_BASE = "wss://stream.binance.com:9443/ws";
 const TIMEZONE_OFFSET_SECONDS = 7 * 60 * 60;
+const STRATEGY_HISTORY_START_MS = Date.UTC(2021, 0, 1);
+const BINANCE_KLINE_LIMIT = 1000;
 const VISIBLE_BARS = 40;
 const RSI_LOW_LEVEL = 20;
 const RSI_HIGH_LEVEL = 80;
@@ -446,6 +448,60 @@ function toChartCandle(kline) {
     close: Number(kline[4]),
     volume: Number(kline[5])
   };
+}
+
+function intervalToMs(interval) {
+  const match = String(interval || "").match(/^(\d+)([mhdwM])$/);
+  if (!match) return 4 * 60 * 60 * 1000;
+
+  const value = Number(match[1]);
+  const unit = match[2];
+  const baseMs = {
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+    w: 7 * 24 * 60 * 60 * 1000,
+    M: 30 * 24 * 60 * 60 * 1000
+  }[unit];
+
+  return value * baseMs;
+}
+
+async function fetchKlines(interval, { limit = BINANCE_KLINE_LIMIT, startTime = null, endTime = null } = {}) {
+  const params = new URLSearchParams({
+    symbol: currentSymbol,
+    interval,
+    limit: String(limit)
+  });
+  if (startTime != null) params.set("startTime", String(startTime));
+  if (endTime != null) params.set("endTime", String(endTime));
+
+  const response = await fetch(`${API}/api/v3/klines?${params.toString()}`);
+  if (!response.ok) throw new Error(`${interval} klines HTTP ${response.status}`);
+  return response.json();
+}
+
+async function fetchKlinesSince(interval, startTime, endTime = Date.now()) {
+  const result = [];
+  const stepMs = intervalToMs(interval);
+  let nextStart = startTime;
+
+  while (nextStart <= endTime) {
+    const chunk = await fetchKlines(interval, {
+      limit: BINANCE_KLINE_LIMIT,
+      startTime: nextStart,
+      endTime
+    });
+    if (!chunk.length) break;
+
+    result.push(...chunk);
+    const lastOpenTime = chunk[chunk.length - 1][0];
+    const advancedStart = lastOpenTime + stepMs;
+    if (advancedStart <= nextStart || chunk.length < BINANCE_KLINE_LIMIT) break;
+    nextStart = advancedStart;
+  }
+
+  return result;
 }
 
 function aggregateCandles(source, groupSize) {
@@ -3001,20 +3057,13 @@ class SingleFramePanel {
     const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
 
+    const historyStart = STRATEGY_HISTORY_START_MS;
+    const historyEnd = Date.now();
     const [raw, h4Raw, h12Raw, d1Raw] = await Promise.all([
       response.json(),
-      fetch(this.parityKlineUrl("4h", 900)).then((res) => {
-        if (!res.ok) throw new Error(`H4 parity HTTP ${res.status}`);
-        return res.json();
-      }),
-      fetch(this.parityKlineUrl("12h", 900)).then((res) => {
-        if (!res.ok) throw new Error(`H12 parity HTTP ${res.status}`);
-        return res.json();
-      }),
-      fetch(this.parityKlineUrl("1d", 900)).then((res) => {
-        if (!res.ok) throw new Error(`D1 parity HTTP ${res.status}`);
-        return res.json();
-      })
+      fetchKlinesSince("4h", historyStart, historyEnd),
+      fetchKlinesSince("12h", historyStart, historyEnd),
+      fetchKlinesSince("1d", historyStart, historyEnd)
     ]);
     if (session !== singleSessionId) return;
 
@@ -3080,6 +3129,11 @@ class SingleFramePanel {
     const orderSource = parityCore ? parityCore.orders : strategyCore.orders;
     const signalMarkers = parityCore?.rsiMarkers || strategyCore.markers;
     const orderDisplayMarkers = strategyOrderDisplayMarkers(orderSource);
+    const chartStartTime = candles[0]?.time ?? 0;
+    const chartEndTime = candles.at(-1)?.time ?? Number.POSITIVE_INFINITY;
+    const visibleOrderDisplayMarkers = orderDisplayMarkers.filter((order) => order.time >= chartStartTime && order.time <= chartEndTime);
+    const visibleSignalMarkers = signalMarkers.filter((marker) => marker.time >= chartStartTime && marker.time <= chartEndTime);
+    const visibleStatusHistory = (parityCore?.status?.history || []).filter((status) => status.time >= chartStartTime && status.time <= chartEndTime);
     if (queryParams().has("debugStrategy")) {
       window.__singleStrategyDebug = {
         timeframe: this.config.label,
@@ -3087,7 +3141,10 @@ class SingleFramePanel {
         parityCandles: this.parityCandles,
         parityCore,
         strategyCore,
-        orderSource
+        orderSource,
+        visibleOrderDisplayMarkers,
+        visibleSignalMarkers,
+        visibleStatusHistory
       };
       document.body.dataset.singleOrdersDebug = JSON.stringify(orderSource.map((order) => ({
         time: order.time,
@@ -3110,6 +3167,16 @@ class SingleFramePanel {
         position: order.position,
         size: order.size
       })));
+      document.body.dataset.singleParityHistoryDebug = JSON.stringify({
+        start: STRATEGY_HISTORY_START_MS / 1000,
+        h4: this.parityCandles.h4.length,
+        h12: this.parityCandles.h12.length,
+        d1: this.parityCandles.d1.length,
+        d2: this.parityCandles.d2.length,
+        visibleOrders: visibleOrderDisplayMarkers.length,
+        visibleSignals: visibleSignalMarkers.length,
+        totalOrders: orderSource.length
+      });
       document.body.dataset.singleStatusDebug = JSON.stringify((parityCore?.status?.history || []).map((status) => ({
         time: status.time,
         index: status.index,
@@ -3190,18 +3257,18 @@ class SingleFramePanel {
         wickColor: bodyColor
       };
     }));
-    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.orders ? orderDisplayMarkers : []);
+    this.candleSeries.setMarkers(SHOW_DRAFT_STRATEGY_ORDERS && layerState.orders ? visibleOrderDisplayMarkers : []);
     this.currentPriceSeries.setData(currentPriceLineData(candles, this.config));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
-    this.rsiD2BgSeries.setData(parityCore ? d2BackgroundData(parityCore.status.history) : []);
-    this.longStopSeries.setData(parityCore ? stopPlotData(parityCore.status.history, 1) : []);
-    this.shortStopSeries.setData(parityCore ? stopPlotData(parityCore.status.history, -1) : []);
+    this.rsiD2BgSeries.setData(parityCore ? d2BackgroundData(visibleStatusHistory) : []);
+    this.longStopSeries.setData(parityCore ? stopPlotData(visibleStatusHistory, 1) : []);
+    this.shortStopSeries.setData(parityCore ? stopPlotData(visibleStatusHistory, -1) : []);
     this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers(layerState.signals ? signalMarkers : []);
+    this.rsiSeries.setMarkers(layerState.signals ? visibleSignalMarkers : []);
     this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
     this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
     this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));

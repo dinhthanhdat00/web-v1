@@ -2837,7 +2837,7 @@ function crossSignals(candles, fastBaseline, slowBaseline) {
 
 function rsi(candles, length = 14) {
   const result = [];
-  if (candles.length <= length + 1) return result;
+  if (candles.length <= length) return result;
 
   let gains = 0;
   let losses = 0;
@@ -2850,6 +2850,11 @@ function rsi(candles, length = 14) {
 
   let avgGain = gains / length;
   let avgLoss = losses / length;
+  const firstRs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+  result.push({
+    time: candles[length].time,
+    value: avgLoss === 0 ? avgGain === 0 ? 50 : 100 : 100 - 100 / (1 + firstRs)
+  });
 
   for (let i = length + 1; i < candles.length; i += 1) {
     const diff = candles[i].close - candles[i - 1].close;
@@ -2859,8 +2864,8 @@ function rsi(candles, length = 14) {
     avgGain = (avgGain * (length - 1) + gain) / length;
     avgLoss = (avgLoss * (length - 1) + loss) / length;
 
-    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    result.push({ time: candles[i].time, value: 100 - (100 / (1 + rs)) });
+    const rs = avgLoss === 0 ? Infinity : avgGain / avgLoss;
+    result.push({ time: candles[i].time, value: avgLoss === 0 ? avgGain === 0 ? 50 : 100 : 100 - (100 / (1 + rs)) });
   }
 
   return result;

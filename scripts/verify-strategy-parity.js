@@ -104,6 +104,10 @@ function priceText(value) {
   return Number.isFinite(value) ? value.toFixed(2) : "n/a";
 }
 
+function qtyText(value) {
+  return Number.isFinite(value) ? value.toFixed(4) : "n/a";
+}
+
 function findClosestByTime(rows, targetTime, timeKey) {
   return rows
     .map((row) => ({ row, diff: Math.abs((row[timeKey] || 0) - targetTime) }))
@@ -115,10 +119,12 @@ function describeLeg(leg) {
   return [
     leg.side,
     `entry=${fmtTime(leg.entryTime)} @ ${priceText(leg.entryPrice)}`,
+    `qty=${qtyText(leg.qty)}`,
     leg.exitTime ? `exit=${fmtTime(leg.exitTime)} @ ${priceText(leg.exitPrice)}` : "open",
+    Number.isFinite(leg.netPnl) ? `net=${priceText(leg.netPnl)}` : null,
     `entryText=${leg.entryText || ""}`,
     `exitText=${leg.exitText || ""}`,
-  ].join(" | ");
+  ].filter(Boolean).join(" | ");
 }
 
 function normalizeOpenLeg(leg) {
@@ -136,9 +142,12 @@ function matchLeg(legs, expected) {
     if (leg.side !== expected.side) return false;
     if (leg.entryTime !== expected.entryTime) return false;
     if (!nearlyEqual(leg.entryPrice, expected.entryPrice, expected.entryPriceTolerance || 1)) return false;
+    if (expected.qty != null && !nearlyEqual(leg.qty, expected.qty, expected.qtyTolerance || 0.01)) return false;
     if (expected.exitTime == null) return !leg.exitTime;
     if (leg.exitTime !== expected.exitTime) return false;
-    return nearlyEqual(leg.exitPrice, expected.exitPrice, expected.exitPriceTolerance || 1);
+    if (!nearlyEqual(leg.exitPrice, expected.exitPrice, expected.exitPriceTolerance || 1)) return false;
+    if (expected.netPnl != null && !nearlyEqual(leg.netPnl, expected.netPnl, expected.netPnlTolerance || 25)) return false;
+    return true;
   });
 }
 
@@ -179,9 +188,13 @@ async function main() {
       entryTime: isoToSec("2026-05-26T12:00:00Z"),
       entryPrice: 76518.08,
       entryPriceTolerance: 2,
+      qty: 1.09,
+      qtyTolerance: 0.03,
       exitTime: isoToSec("2026-06-08T20:00:00Z"),
       exitPrice: 63086.01,
       exitPriceTolerance: 2,
+      netPnl: 14559.318,
+      netPnlTolerance: 75,
     },
     {
       id: "TV #351 long",
@@ -189,9 +202,13 @@ async function main() {
       entryTime: isoToSec("2026-06-19T16:00:00Z"),
       entryPrice: 63021.62,
       entryPriceTolerance: 2,
+      qty: 0.39,
+      qtyTolerance: 0.02,
       exitTime: isoToSec("2026-06-23T08:00:00Z"),
       exitPrice: 62507.04,
       exitPriceTolerance: 2,
+      netPnl: -211.055,
+      netPnlTolerance: 50,
     },
     {
       id: "TV #352 long",
@@ -199,9 +216,13 @@ async function main() {
       entryTime: isoToSec("2026-06-24T08:00:00Z"),
       entryPrice: 62921.21,
       entryPriceTolerance: 2,
+      qty: 0.64,
+      qtyTolerance: 0.03,
       exitTime: isoToSec("2026-06-24T12:00:00Z"),
       exitPrice: 60249.98,
       exitPriceTolerance: 10,
+      netPnl: -1734.061,
+      netPnlTolerance: 75,
     },
     {
       id: "TV #353 open long",
@@ -209,6 +230,8 @@ async function main() {
       entryTime: isoToSec("2026-06-26T04:00:00Z"),
       entryPrice: 60532.02,
       entryPriceTolerance: 2,
+      qty: 0.58,
+      qtyTolerance: 0.03,
       exitTime: null,
     },
   ];
@@ -227,7 +250,7 @@ async function main() {
     failed += 1;
     const closest = findClosestByTime(legs.filter((leg) => leg.side === expected.side), expected.entryTime, "entryTime");
     console.log(`FAIL ${expected.id}`);
-    console.log(`  expected: ${expected.side} | entry=${fmtTime(expected.entryTime)} @ ${priceText(expected.entryPrice)} | ${expected.exitTime == null ? "open" : `exit=${fmtTime(expected.exitTime)} @ ${priceText(expected.exitPrice)}`}`);
+    console.log(`  expected: ${expected.side} | entry=${fmtTime(expected.entryTime)} @ ${priceText(expected.entryPrice)} | qty=${qtyText(expected.qty)} | ${expected.exitTime == null ? "open" : `exit=${fmtTime(expected.exitTime)} @ ${priceText(expected.exitPrice)}`} ${expected.netPnl == null ? "" : `| net=${priceText(expected.netPnl)}`}`);
     console.log(`  closest:  ${describeLeg(closest)}`);
   }
 
@@ -239,6 +262,15 @@ async function main() {
 
   console.log("\nOrders around known mismatch window:");
   for (const line of windowOrders) console.log(`  ${line}`);
+
+  const legWindowFrom = isoToSec("2026-05-20T00:00:00Z");
+  const legWindowTo = isoToSec("2026-06-10T00:00:00Z");
+  const windowLegs = legs
+    .filter((leg) => leg.entryTime >= legWindowFrom && leg.entryTime <= legWindowTo)
+    .map(describeLeg);
+
+  console.log("\nIndividual legs around TV #350:");
+  for (const line of windowLegs) console.log(`  ${line}`);
 
   if (failed) {
     process.exitCode = 1;

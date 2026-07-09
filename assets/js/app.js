@@ -294,6 +294,79 @@ function buildClosedTradesFromOrders(orders) {
   };
 }
 
+function buildClosedTradeLegsFromOrders(orders) {
+  const closed = [];
+  const openLegs = [];
+
+  orders.forEach((order) => {
+    const qty = Number(order.qty);
+    const price = Number(order.price);
+    const commission = Number(order.commission) || 0;
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) return;
+
+    if (order.action === "entry") {
+      const side = order.position === "belowBar" ? 1 : -1;
+      openLegs.push({
+        side,
+        qty,
+        entryTime: order.time,
+        entryPrice: price,
+        entryText: order.text || "",
+        entryDetail: order.detail || "",
+        entryCommission: commission
+      });
+      return;
+    }
+
+    if (order.action !== "exit") return;
+    const exitSide = order.position === "aboveBar" ? 1 : -1;
+    let remainingExitQty = qty;
+
+    for (let index = 0; index < openLegs.length && remainingExitQty > 1e-10; index += 1) {
+      const leg = openLegs[index];
+      if (!leg || leg.side !== exitSide || leg.qty <= 1e-10) continue;
+
+      const closeQty = Math.min(leg.qty, remainingExitQty);
+      const entryCommission = leg.entryCommission * (closeQty / leg.qty);
+      const exitCommission = commission * (closeQty / qty);
+      const grossPnl = leg.side === 1 ? (price - leg.entryPrice) * closeQty : (leg.entryPrice - price) * closeQty;
+      const netPnl = grossPnl - entryCommission - exitCommission;
+      const entryNotional = leg.entryPrice * closeQty;
+
+      closed.push({
+        tradeNumber: closed.length + 1,
+        side: leg.side === 1 ? "long" : "short",
+        entryTime: leg.entryTime,
+        exitTime: order.time,
+        entryPrice: leg.entryPrice,
+        exitPrice: price,
+        qty: closeQty,
+        entryText: leg.entryText,
+        exitText: order.text || "",
+        entryDetail: leg.entryDetail,
+        exitDetail: order.detail || "",
+        entryCommission,
+        exitCommission,
+        totalCommission: entryCommission + exitCommission,
+        grossPnl,
+        netPnl,
+        returnPct: entryNotional > 0 ? netPnl / entryNotional * 100 : null,
+        equityAfterExit: order.equity
+      });
+
+      leg.qty -= closeQty;
+      leg.entryCommission -= entryCommission;
+      remainingExitQty -= closeQty;
+    }
+
+    for (let index = openLegs.length - 1; index >= 0; index -= 1) {
+      if (openLegs[index].qty <= 1e-10) openLegs.splice(index, 1);
+    }
+  });
+
+  return { closed, open: openLegs };
+}
+
 function displayD2Regime(value) {
   if (value === "D2_SUPPORT") return "SUPPORT";
   if (value === "D2_NEUTRAL") return "NEUTRAL";
@@ -3229,6 +3302,7 @@ class SingleFramePanel {
     const signalMarkers = parityCore?.rsiMarkers || strategyCore.markers;
     const orderDisplayMarkers = strategyOrderDisplayMarkers(orderSource);
     const tradeSummary = buildClosedTradesFromOrders(orderSource);
+    const tradeLegSummary = buildClosedTradeLegsFromOrders(orderSource);
     const chartStartTime = candles[0]?.time ?? 0;
     const chartEndTime = candles.at(-1)?.time ?? Number.POSITIVE_INFINITY;
     const visibleOrderDisplayMarkers = orderDisplayMarkers.filter((order) => order.time >= chartStartTime && order.time <= chartEndTime);
@@ -3243,6 +3317,7 @@ class SingleFramePanel {
         strategyCore,
         orderSource,
         tradeSummary,
+        tradeLegSummary,
         visibleOrderDisplayMarkers,
         visibleSignalMarkers,
         visibleStatusHistory
@@ -3284,6 +3359,12 @@ class SingleFramePanel {
         closedCount: tradeSummary.closed.length,
         open: tradeSummary.open,
         closed: tradeSummary.closed
+      });
+      document.body.dataset.singleClosedTradeLegsDebug = JSON.stringify({
+        closedCount: tradeLegSummary.closed.length,
+        openCount: tradeLegSummary.open.length,
+        open: tradeLegSummary.open,
+        closed: tradeLegSummary.closed
       });
       document.body.dataset.singleStatusDebug = JSON.stringify((parityCore?.status?.history || []).map((status) => ({
         time: status.time,

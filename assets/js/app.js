@@ -1896,6 +1896,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const qualityGap = STRATEGY_CONFIG.minQualityScore - triggerQualityScore;
     const softQualityStructureOk = Math.abs(triggerCode) === 5 || triggerTf === "H12" || (triggerTf === "H4" && readinessAllowsEarlyCounter && (STRATEGY_CONFIG.ignoreH4NoiseGate || !current.h4MidNoiseState));
     const softLowQualitySetup = preQualityActionable && validTriggerStop && STRATEGY_CONFIG.allowSoftLowQualityProbe && !qualityOk && qualityGap > 0 && qualityGap <= STRATEGY_CONFIG.softQualityBuffer && softQualityStructureOk && !strongConflict && !triggerTrapWait;
+    const lowQualitySetup = preQualityActionable && validTriggerStop && !qualityOk && !softLowQualitySetup;
     const entryMode = qualityOk ? entryModePreQuality : softLowQualitySetup ? "PARTIAL ONLY" : "NO-TRADE";
     const actionableEntry = entryMode === "PARTIAL ONLY" || entryMode === "FULL ENTRY";
     const fullSignalColor = entryMode === "FULL ENTRY";

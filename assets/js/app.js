@@ -1419,7 +1419,7 @@ function computeFramePacks(candles) {
       side = 1; point = 5; stateBar = index;
     } else if (sell3Impulse) {
       side = -1; point = 5; stateBar = index;
-    } else if (buy3DirectFromII || sell3DirectFromII || buy3Event || sell3Event) {
+    } else if (buy3DirectFromII || sell3DirectFromII) {
       point = 5; stateBar = index;
     } else if (buyIIEvent || sellIIEvent) {
       point = 2; stateBar = index;
@@ -1427,6 +1427,8 @@ function computeFramePacks(candles) {
       point = 3; stateBar = index;
     } else if (buy2Event || sell2Event) {
       point = 4; stateBar = index;
+    } else if (buy3Event || sell3Event) {
+      point = 5; stateBar = index;
     }
 
     const trap = trapCode(row.rsi, noiseState);
@@ -1871,6 +1873,21 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
         currentBias: current.bias,
         h12PanelState: semanticStateShort(h12.semanticState),
         h12Bias: h12.bias,
+        h12TriggerCode: h12.triggerCode,
+        h12TriggerTime: h12.triggerTime,
+        h12ReadinessScore: h12.readinessScore,
+        h12ReadinessCode: h12.readinessCode,
+        d1PanelState: semanticStateShort(d1.semanticState),
+        d1Bias: d1.bias,
+        d1TriggerCode: d1.triggerCode,
+        d1TriggerTime: d1.triggerTime,
+        d1ReadinessScore: d1.readinessScore,
+        d1ReadinessCode: d1.readinessCode,
+        d2PanelState: semanticStateShort(d2.semanticState),
+        d2TriggerCode: d2.triggerCode,
+        d2TriggerTime: d2.triggerTime,
+        d2ReadinessScore: d2.readinessScore,
+        d2ReadinessCode: d2.readinessCode,
         mtfState,
         d2Regime,
         d2Bias: d2.bias,
@@ -1905,6 +1922,21 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
         currentBias: current.bias,
         h12PanelState: semanticStateShort(h12.semanticState),
         h12Bias: h12.bias,
+        h12TriggerCode: h12.triggerCode,
+        h12TriggerTime: h12.triggerTime,
+        h12ReadinessScore: h12.readinessScore,
+        h12ReadinessCode: h12.readinessCode,
+        d1PanelState: semanticStateShort(d1.semanticState),
+        d1Bias: d1.bias,
+        d1TriggerCode: d1.triggerCode,
+        d1TriggerTime: d1.triggerTime,
+        d1ReadinessScore: d1.readinessScore,
+        d1ReadinessCode: d1.readinessCode,
+        d2PanelState: semanticStateShort(d2.semanticState),
+        d2TriggerCode: d2.triggerCode,
+        d2TriggerTime: d2.triggerTime,
+        d2ReadinessScore: d2.readinessScore,
+        d2ReadinessCode: d2.readinessCode,
         mtfState,
         d2Regime,
         d2Bias: d2.bias,
@@ -2086,6 +2118,21 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       currentBias: current.bias,
       h12PanelState: semanticStateShort(h12.semanticState),
       h12Bias: h12.bias,
+      h12TriggerCode: h12.triggerCode,
+      h12TriggerTime: h12.triggerTime,
+      h12ReadinessScore: h12.readinessScore,
+      h12ReadinessCode: h12.readinessCode,
+      d1PanelState: semanticStateShort(d1.semanticState),
+      d1Bias: d1.bias,
+      d1TriggerCode: d1.triggerCode,
+      d1TriggerTime: d1.triggerTime,
+      d1ReadinessScore: d1.readinessScore,
+      d1ReadinessCode: d1.readinessCode,
+      d2PanelState: semanticStateShort(d2.semanticState),
+      d2TriggerCode: d2.triggerCode,
+      d2TriggerTime: d2.triggerTime,
+      d2ReadinessScore: d2.readinessScore,
+      d2ReadinessCode: d2.readinessCode,
       mtfState,
       d2Regime,
       d2Bias: d2.bias,
@@ -3374,6 +3421,21 @@ class SingleFramePanel {
         currentBias: status.currentBias,
         h12PanelState: status.h12PanelState,
         h12Bias: status.h12Bias,
+        h12TriggerCode: status.h12TriggerCode,
+        h12TriggerTime: status.h12TriggerTime,
+        h12ReadinessScore: status.h12ReadinessScore,
+        h12ReadinessCode: status.h12ReadinessCode,
+        d1PanelState: status.d1PanelState,
+        d1Bias: status.d1Bias,
+        d1TriggerCode: status.d1TriggerCode,
+        d1TriggerTime: status.d1TriggerTime,
+        d1ReadinessScore: status.d1ReadinessScore,
+        d1ReadinessCode: status.d1ReadinessCode,
+        d2PanelState: status.d2PanelState,
+        d2TriggerCode: status.d2TriggerCode,
+        d2TriggerTime: status.d2TriggerTime,
+        d2ReadinessScore: status.d2ReadinessScore,
+        d2ReadinessCode: status.d2ReadinessCode,
         mtfState: status.mtfState,
         d2Regime: status.d2Regime,
         d2Bias: status.d2Bias,

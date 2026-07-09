@@ -6,6 +6,17 @@ const rootDir = path.resolve(__dirname, "..");
 const appPath = path.join(rootDir, "assets", "js", "app.js");
 const appCode = fs.readFileSync(appPath, "utf8").replace(/\bboot\(\);\s*$/, "");
 
+function cliSearch() {
+  const params = [];
+  for (const arg of process.argv.slice(2)) {
+    if (!arg.startsWith("--st.") && !arg.startsWith("--strategy.")) continue;
+    const [rawKey, ...rest] = arg.slice(2).split("=");
+    if (!rawKey || !rest.length) continue;
+    params.push(`${encodeURIComponent(rawKey)}=${encodeURIComponent(rest.join("="))}`);
+  }
+  return params.length ? `?${params.join("&")}` : "";
+}
+
 function makeContext() {
   const context = {
     console,
@@ -28,7 +39,7 @@ function makeContext() {
     Object,
     URLSearchParams,
     window: {
-      location: { search: "", pathname: "/", origin: "http://127.0.0.1" },
+      location: { search: cliSearch(), pathname: "/", origin: "http://127.0.0.1" },
       addEventListener() {},
     },
     document: {
@@ -155,6 +166,9 @@ async function main() {
   const context = makeContext();
   vm.createContext(context);
   vm.runInContext(appCode, context, { filename: appPath });
+  if (typeof context.applyStrategyUrlOverrides === "function") {
+    context.applyStrategyUrlOverrides();
+  }
 
   const {
     aggregateCandlesByTime,

@@ -944,6 +944,63 @@ const STRATEGY_INPUTS = {
   showStopPlots: false
 };
 
+const STRATEGY_URL_OVERRIDES = {
+  partialRiskPct: { target: STRATEGY_INPUTS, type: "number", min: 0.1, max: 50 },
+  fullRiskPct: { target: STRATEGY_INPUTS, type: "number", min: 0.1, max: 50 },
+  maxLeverage: { target: STRATEGY_INPUTS, type: "number", min: 0.1, max: 5 },
+  capitalUsageCapPct: { target: STRATEGY_INPUTS, type: "number", min: 10, max: 100 },
+  enableH4SwingTrail: { target: STRATEGY_INPUTS, type: "bool" },
+  h4SwingPivotBars: { target: STRATEGY_INPUTS, type: "int", min: 1, max: 100 },
+  h4SwingTrailPivotBars: { target: STRATEGY_INPUTS, type: "int", min: 1, max: 100 },
+  h4FormTrailLookback: { target: STRATEGY_INPUTS, type: "int", min: 1, max: 100 },
+  h4SwingSlBuffer: { target: STRATEGY_INPUTS, type: "number", min: 0, max: 10000 },
+  h4SwingTrailAfterOneR: { target: STRATEGY_INPUTS, type: "bool" },
+  enableBreakEvenAtTwoR: { target: STRATEGY_INPUTS, type: "bool" },
+  breakEvenRMultiple: { target: STRATEGY_INPUTS, type: "number", min: 0.5, max: 10 },
+  flatCooldownBars: { target: STRATEGY_INPUTS, type: "int", min: 0, max: 200 },
+  nonConsensusCooldownBars: { target: STRATEGY_INPUTS, type: "int", min: 0, max: 200 },
+  requireFreshTriggerAfterNonConsensus: { target: STRATEGY_INPUTS, type: "bool" },
+  allowH4EarlyD2Override: { target: STRATEGY_INPUTS, type: "bool" },
+  allowContinuationAddAfterBE: { target: STRATEGY_INPUTS, type: "bool" },
+  maxContinuationAddsPerThesis: { target: STRATEGY_INPUTS, type: "int", min: 0, max: 5 },
+  thesisBreakConfirmBars: { target: STRATEGY_INPUTS, type: "int", min: 1, max: 5 },
+  allowRiskRecycleAdd: { target: STRATEGY_INPUTS, type: "bool" },
+  allowSoftLowQualityProbe: { target: STRATEGY_CONFIG, type: "bool" },
+  softQualityBuffer: { target: STRATEGY_CONFIG, type: "int", min: 0, max: 2 },
+  minQualityScore: { target: STRATEGY_CONFIG, type: "int", min: 1, max: 6 },
+  minSlPct: { target: STRATEGY_CONFIG, type: "number", min: 0, max: 100 },
+  maxSlPct: { target: STRATEGY_CONFIG, type: "number", min: 0, max: 100 },
+  ignoreH4NoiseGate: { target: STRATEGY_CONFIG, type: "bool" },
+  allowDirectITriggers: { target: STRATEGY_CONFIG, type: "bool" },
+  requireStrictFormSequence: { target: STRATEGY_CONFIG, type: "bool" }
+};
+
+function parseStrategyBool(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(text)) return true;
+  if (["0", "false", "no", "off"].includes(text)) return false;
+  return null;
+}
+
+function parseStrategyOverrideValue(rawValue, spec) {
+  if (spec.type === "bool") return parseStrategyBool(rawValue);
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return null;
+  const clamped = Math.min(spec.max ?? parsed, Math.max(spec.min ?? parsed, parsed));
+  return spec.type === "int" ? Math.round(clamped) : clamped;
+}
+
+function applyStrategyUrlOverrides() {
+  const params = queryParams();
+  Object.entries(STRATEGY_URL_OVERRIDES).forEach(([key, spec]) => {
+    const rawValue = params.get(`st.${key}`) ?? params.get(`strategy.${key}`);
+    if (rawValue == null) return;
+    const value = parseStrategyOverrideValue(rawValue, spec);
+    if (value == null) return;
+    spec.target[key] = value;
+  });
+}
+
 function strategyConfigFingerprint() {
   return [
     `R${params.rsiLength}E${params.rsiEmaLength}W${params.rsiWmaLength}`,
@@ -4339,6 +4396,7 @@ function startClock() {
 function boot() {
   cleanStartupUrl();
   loadParams();
+  applyStrategyUrlOverrides();
   currentSymbol = initialSymbol();
   updateSymbolTitle();
   applyInitialTimeframeFocus();

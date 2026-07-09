@@ -1054,6 +1054,10 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
   const sell2Condition = [];
   const buy3Condition = [];
   const sell3Condition = [];
+  const buy2ClassicCondition = [];
+  const sell2ClassicCondition = [];
+  const buy3ClassicCondition = [];
+  const sell3ClassicCondition = [];
   let side = 0;
   let point = 0;
   let stateBar = null;
@@ -1152,6 +1156,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
     const sell2Candidate = sellPointsAllowed && side === -1 && point >= 3 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState;
     const buy2SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_2 && semanticState !== SEM.BUY_2 && index > (stateBar ?? -1) && !noiseState;
     const sell2SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_2 && semanticState !== SEM.SELL_2 && index > (stateBar ?? -1) && !noiseState;
+    buy2ClassicCondition[index] = buy2Candidate;
+    sell2ClassicCondition[index] = sell2Candidate;
     buy2Condition[index] = buy2Candidate || buy2SemanticCandidate;
     sell2Condition[index] = sell2Candidate || sell2SemanticCandidate;
     const buy2Event = freshAt(buy2Condition, index) || buy2DirectFromI;
@@ -1166,6 +1172,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
     const sell3Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && !noiseState && (point >= 3 && wmaCrossDown || sell3WindowFromII);
     const buy3SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_3 && semanticState !== SEM.BUY_3 && index > (stateBar ?? -1) && !noiseState;
     const sell3SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_3 && semanticState !== SEM.SELL_3 && index > (stateBar ?? -1) && !noiseState;
+    buy3ClassicCondition[index] = buy3Candidate;
+    sell3ClassicCondition[index] = sell3Candidate;
     buy3Condition[index] = buy3Candidate || buy3SemanticCandidate;
     sell3Condition[index] = sell3Candidate || sell3SemanticCandidate;
     const buy3Event = freshAt(buy3Condition, index) || buy3DirectFromII || buy3Impulse;
@@ -1411,6 +1419,10 @@ function computeFramePacks(candles) {
   const sell2Condition = [];
   const buy3Condition = [];
   const sell3Condition = [];
+  const buy2ClassicCondition = [];
+  const sell2ClassicCondition = [];
+  const buy3ClassicCondition = [];
+  const sell3ClassicCondition = [];
   const h4MidZoneFlags = [];
   const spreadEma = [];
   let side = 0;
@@ -1485,6 +1497,8 @@ function computeFramePacks(candles) {
     const sell2Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && row.rsi < row.ema && row.rsi > row.wma && !noiseState && (strictForm ? point === 3 : point >= 3);
     const buy2SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_2 && semanticState !== SEM.BUY_2 && index > (stateBar ?? -1) && !noiseState;
     const sell2SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_2 && semanticState !== SEM.SELL_2 && index > (stateBar ?? -1) && !noiseState;
+    buy2ClassicCondition[index] = buy2Candidate;
+    sell2ClassicCondition[index] = sell2Candidate;
     buy2Condition[index] = buy2Candidate || buy2SemanticCandidate;
     sell2Condition[index] = sell2Candidate || sell2SemanticCandidate;
     const buy2Event = freshAt(buy2Condition, index) || buy2DirectFromI;
@@ -1499,14 +1513,16 @@ function computeFramePacks(candles) {
     const sell3Candidate = sellPointsAllowed && side === -1 && index > (stateBar ?? -1) && !noiseState && (((strictForm ? point === 4 : point >= 3) && wmaCrossDown) || sell3WindowFromII);
     const buy3SemanticCandidate = buyPointsAllowed && previewSemanticState === SEM.BUY_3 && semanticState !== SEM.BUY_3 && index > (stateBar ?? -1) && !noiseState;
     const sell3SemanticCandidate = sellPointsAllowed && previewSemanticState === SEM.SELL_3 && semanticState !== SEM.SELL_3 && index > (stateBar ?? -1) && !noiseState;
+    buy3ClassicCondition[index] = buy3Candidate;
+    sell3ClassicCondition[index] = sell3Candidate;
     buy3Condition[index] = buy3Candidate || buy3SemanticCandidate;
     sell3Condition[index] = sell3Candidate || sell3SemanticCandidate;
     const buy3Event = freshAt(buy3Condition, index) || buy3DirectFromII || buy3Impulse;
     const sell3Event = freshAt(sell3Condition, index) || sell3DirectFromII || sell3Impulse;
-    const buy2ClassicEvent = freshAt(buy2Condition, index);
-    const sell2ClassicEvent = freshAt(sell2Condition, index);
-    const buy3ClassicEvent = freshAt(buy3Condition, index);
-    const sell3ClassicEvent = freshAt(sell3Condition, index);
+    const buy2ClassicEvent = freshAt(buy2ClassicCondition, index);
+    const sell2ClassicEvent = freshAt(sell2ClassicCondition, index);
+    const buy3ClassicEvent = freshAt(buy3ClassicCondition, index);
+    const sell3ClassicEvent = freshAt(sell3ClassicCondition, index);
     const entrySwingLookback = Math.max(2, STRATEGY_INPUTS.h4SwingPivotBars * 2 + 1);
     const entryBufferedSwingLow = lowest(candles, index, entrySwingLookback) - STRATEGY_INPUTS.h4SwingSlBuffer;
     const entryBufferedSwingHigh = highest(candles, index, entrySwingLookback) + STRATEGY_INPUTS.h4SwingSlBuffer;
@@ -2115,7 +2131,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       : positionSide === -1 && positionActiveStop != null && positionAvgPrice != null
         ? positionActiveStop <= positionAvgPrice + STRATEGY_INPUTS.priceTick
         : false;
-    const continuationNoiseBlocked = current.noiseState && thesisFrameLevel <= 1 && !STRATEGY_CONFIG.ignoreH4NoiseGate;
+    const continuationNoiseBlocked = current.h4MidNoiseState && thesisFrameLevel <= 1 && !STRATEGY_CONFIG.ignoreH4NoiseGate;
     const continuationTopUpIntent = STRATEGY_INPUTS.allowContinuationAddAfterBE && positionSide !== 0 && continuationH4TriggerCode !== 0 && continuationAddsUsed < STRATEGY_INPUTS.maxContinuationAddsPerThesis && !continuationNoiseBlocked && !nonConsensusExit && mtfState !== "MTF_STRONG_CONFLICT";
     const continuationTopUpSignal = continuationTopUpIntent && stopLockedBeyondEntry;
     const topUpSignalSide = promotionTopUpSide !== 0 || continuationTopUpSignal ? positionSide : triggerSide;

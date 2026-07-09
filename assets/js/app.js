@@ -2111,19 +2111,19 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
           : continuationH4TriggerCode === -4 ? "H4/cont/S2"
             : "none";
     const stopLockedBeyondEntry = positionSide === 1 && positionActiveStop != null && positionAvgPrice != null
-      ? positionActiveStop >= positionAvgPrice
+      ? positionActiveStop >= positionAvgPrice - STRATEGY_INPUTS.priceTick
       : positionSide === -1 && positionActiveStop != null && positionAvgPrice != null
-        ? positionActiveStop <= positionAvgPrice
+        ? positionActiveStop <= positionAvgPrice + STRATEGY_INPUTS.priceTick
         : false;
     const continuationNoiseBlocked = current.noiseState && thesisFrameLevel <= 1 && !STRATEGY_CONFIG.ignoreH4NoiseGate;
-    const continuationTopUpIntent = STRATEGY_INPUTS.allowContinuationAddAfterBE && positionSide !== 0 && continuationH4TriggerCode !== 0 && continuationAddsUsed < STRATEGY_INPUTS.maxContinuationAddsPerThesis && !continuationNoiseBlocked && mtfState !== "MTF_STRONG_CONFLICT";
+    const continuationTopUpIntent = STRATEGY_INPUTS.allowContinuationAddAfterBE && positionSide !== 0 && continuationH4TriggerCode !== 0 && continuationAddsUsed < STRATEGY_INPUTS.maxContinuationAddsPerThesis && !continuationNoiseBlocked && !nonConsensusExit && mtfState !== "MTF_STRONG_CONFLICT";
     const continuationTopUpSignal = continuationTopUpIntent && stopLockedBeyondEntry;
     const topUpSignalSide = promotionTopUpSide !== 0 || continuationTopUpSignal ? positionSide : triggerSide;
     const sameSideTopUpContext = positionSide !== 0 && topUpSignalSide === positionSide;
     const currentPositionRiskPerUnit = sameSideTopUpContext && positionActiveStop != null ? (topUpSignalSide === 1 ? candle.close - positionActiveStop : positionActiveStop - candle.close) : null;
     const currentPositionRiskAmount = sameSideTopUpContext && currentPositionRiskPerUnit != null && currentPositionRiskPerUnit > 0 ? Math.abs(positionQty) * currentPositionRiskPerUnit : null;
     const fullRiskAmount = equity * fullRiskPct / 100;
-    const promotionTopUpIntent = STRATEGY_INPUTS.allowPromotionScaleIn && sameSideTopUpContext && promotionTargetLevel > 0 && promotionTargetLevel > lastPromotionAddLevel && mtfState !== "MTF_STRONG_CONFLICT";
+    const promotionTopUpIntent = STRATEGY_INPUTS.allowPromotionScaleIn && sameSideTopUpContext && promotionTargetLevel > 0 && promotionTargetLevel > lastPromotionAddLevel && !nonConsensusExit && mtfState !== "MTF_STRONG_CONFLICT";
     const promotionTopUpSignal = promotionTopUpIntent && stopLockedBeyondEntry;
     const standardTopUpRiskAmount = sameSideTopUpContext && currentPositionRiskAmount != null ? Math.max(fullRiskAmount - currentPositionRiskAmount, 0) : null;
     const recycleTopUpRiskAmount = (continuationTopUpSignal || promotionTopUpSignal) && STRATEGY_INPUTS.allowRiskRecycleAdd ? fullRiskAmount : null;
@@ -2138,11 +2138,11 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const topUpHasQty = topUpQty != null && topUpQty > 0;
     const continuationTopUpReady = continuationTopUpSignal && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk;
     const promotionTopUpReady = promotionTopUpSignal && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk;
-    const topUpReady = (promotionTopUpReady || continuationTopUpReady) && sameSideTopUpContext && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk && mtfState !== "MTF_STRONG_CONFLICT";
+    const topUpReady = (promotionTopUpReady || continuationTopUpReady) && !nonConsensusExit && sameSideTopUpContext && topUpRiskPct != null && topUpRiskPct > 0 && topUpHasQty && topUpCapacityOk && topUpPyramidOk && mtfState !== "MTF_STRONG_CONFLICT";
     const topUpEntrySide = promotionTopUpReady ? positionSide : continuationTopUpReady ? positionSide : triggerSide;
     const topUpTriggerText = promotionTopUpReady ? `${thesisFrameLabel(promotionTargetLevel)}/promote` : continuationTopUpReady ? `${thesisFrameLabel(currentThesisAddLevel)}/${continuationH4TriggerText}` : triggerText;
     const topUpCommentPrefix = promotionTopUpReady ? "Promote " : continuationTopUpReady ? "Continue " : "ThesisFull ";
-    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && !postThesisBreakSameSideBlocked && positionSide === 0 && !topUpReady && entryQty != null && entryQty > 0;
+    const flatEntryReady = canUseTrigger && !h4OriginFlowBlocked && !postThesisBreakSameSideBlocked && !nonConsensusExit && positionSide === 0 && !topUpReady && entryQty != null && entryQty > 0;
     const rawHasTrigger = h12RawUsableTrigger || rawCurrentUsableTrigger;
     const sameSidePosition = positionSide !== 0 && triggerSide === positionSide;
     const reentryBlocked = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && (!nonConsensusCooldownOk || !freshAfterNonConsensus);

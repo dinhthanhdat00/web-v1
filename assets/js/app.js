@@ -199,11 +199,9 @@ function tradeTypeLabel(order) {
 
 function strategyOrderDisplayMarkers(orders) {
   return orders.map((order) => {
-    const code = String(order.text || "").match(/\b([LS])\s+([BS]\d)\b/);
-    const compactEntry = code ? `IN ${code[2]}` : "IN";
     const isStop = order.text === "SL";
     const text = order.action === "entry"
-      ? String(order.text || "").startsWith("ADD") ? "ADD" : compactEntry
+      ? "IN"
       : isStop ? "SL" : "OUT";
     const isLongEntry = order.action === "entry" && order.position === "belowBar";
     const isShortEntry = order.action === "entry" && order.position === "aboveBar";
@@ -212,8 +210,8 @@ function strategyOrderDisplayMarkers(orders) {
       ...order,
       originalText: order.text,
       text,
-      size: isExit ? 3 : 3,
-      color: isExit ? isStop ? "#ff5a66" : "#ff4fd8" : isLongEntry ? "#304cff" : isShortEntry ? "#d000ff" : order.color
+      size: 4,
+      color: isExit ? isStop ? "#ff3b4f" : "#ff4fd8" : isLongEntry ? "#2f5cff" : isShortEntry ? "#d600ff" : order.color
     };
   });
 }
@@ -2321,6 +2319,13 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       panelReasonDetail,
       panelStopText: panelStopPrice == null ? "-" : `${formatTradePrice(panelStopPrice)}${panelStopRef !== "-" ? ` ${panelStopRef}` : ""}`,
       thesisBrokenReason,
+      thesisFrameState: semanticStateShort(thesisState),
+      thesisFrameSide: thesisSide,
+      thesisFrameTier: thesisTier,
+      thesisFamilyBroken,
+      thesisStrengthBroken,
+      thesisBrokenSignal,
+      thesisBreakRequiredBars,
       thesisBrokenConfirmed,
       rawHasTrigger,
       actionableEntry,

@@ -1827,6 +1827,14 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     return Number((price + direction * offset).toFixed(8));
   }
 
+  function strategyEquityAt(price) {
+    if (!Number.isFinite(price) || positionSide === 0 || positionQty <= 0 || positionAvgPrice == null) return equity;
+    const unrealized = positionSide === 1
+      ? (price - positionAvgPrice) * positionQty
+      : (positionAvgPrice - price) * positionQty;
+    return equity + unrealized;
+  }
+
   function recordStatus(index, status) {
     const candle = h4Candles[index];
     latestStatus = {
@@ -2169,11 +2177,12 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const h4WarningOnly = h4OppositeTrigger || h4AgainstPosition;
     const h4OriginFlowBlocked = positionSide === 0 && triggerTf === "H12" && actionableEntry;
     const postThesisBreakSameSideBlocked = positionSide === 0 && postThesisBreakLockActive && actionableEntry && triggerSide === postThesisBreakBlockedSide;
+    const strategyEquity = strategyEquityAt(candle.close);
     const entryRiskPct = entryMode === "FULL ENTRY" ? fullRiskPct : entryMode === "PARTIAL ONLY" ? partialRiskPct : null;
-    const maxNotional = equity * maxLeverage;
+    const maxNotional = strategyEquity * maxLeverage;
     const usableNotional = maxNotional * capitalUsageCapPct / 100;
     const maxQty = usableNotional / candle.close;
-    const entryRiskAmount = entryRiskPct != null ? equity * entryRiskPct / 100 : null;
+    const entryRiskAmount = entryRiskPct != null ? strategyEquity * entryRiskPct / 100 : null;
     const entryQtyRaw = validTriggerStop && entryRiskAmount != null ? entryRiskAmount / riskPerUnit : null;
     const entryQty = entryQtyRaw != null ? Math.min(entryQtyRaw, maxQty) : null;
     const promotionTargetLevel = promotedToD1 ? 3 : promotedToH12 ? 2 : 0;
@@ -2202,13 +2211,13 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const sameSideTopUpContext = positionSide !== 0 && topUpSignalSide === positionSide;
     const currentPositionRiskPerUnit = sameSideTopUpContext && positionActiveStop != null ? (topUpSignalSide === 1 ? candle.close - positionActiveStop : positionActiveStop - candle.close) : null;
     const currentPositionRiskAmount = sameSideTopUpContext && currentPositionRiskPerUnit != null && currentPositionRiskPerUnit > 0 ? Math.abs(positionQty) * currentPositionRiskPerUnit : null;
-    const fullRiskAmount = equity * fullRiskPct / 100;
+    const fullRiskAmount = strategyEquity * fullRiskPct / 100;
     const promotionTopUpIntent = STRATEGY_INPUTS.allowPromotionScaleIn && sameSideTopUpContext && promotionTargetLevel > 0 && promotionTargetLevel > lastPromotionAddLevel && !nonConsensusExit && mtfState !== "MTF_STRONG_CONFLICT";
     const promotionTopUpSignal = promotionTopUpIntent && stopLockedBeyondEntry;
     const standardTopUpRiskAmount = sameSideTopUpContext && currentPositionRiskAmount != null ? Math.max(fullRiskAmount - currentPositionRiskAmount, 0) : null;
     const recycleTopUpRiskAmount = (continuationTopUpSignal || promotionTopUpSignal) && STRATEGY_INPUTS.allowRiskRecycleAdd ? fullRiskAmount : null;
     const topUpRiskAmount = recycleTopUpRiskAmount != null ? recycleTopUpRiskAmount : standardTopUpRiskAmount;
-    const topUpRiskPct = topUpRiskAmount != null && equity > 0 ? topUpRiskAmount / equity * 100 : null;
+    const topUpRiskPct = topUpRiskAmount != null && strategyEquity > 0 ? topUpRiskAmount / strategyEquity * 100 : null;
     const topUpRiskPerUnit = sameSideTopUpContext && positionActiveStop != null ? (topUpSignalSide === 1 ? candle.close - positionActiveStop : positionActiveStop - candle.close) : null;
     const availableTopUpQty = Math.max(maxQty - Math.abs(positionQty), 0);
     const topUpQtyRaw = sameSideTopUpContext && topUpRiskPerUnit != null && topUpRiskPerUnit > 0 && topUpRiskAmount != null && topUpRiskAmount > 0 ? topUpRiskAmount / topUpRiskPerUnit : null;

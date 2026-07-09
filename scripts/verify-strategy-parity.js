@@ -17,6 +17,13 @@ function cliSearch() {
   return params.length ? `?${params.join("&")}` : "";
 }
 
+function cliStatusTimes() {
+  return process.argv.slice(2)
+    .filter((arg) => arg.startsWith("--status="))
+    .map((arg) => isoToSec(arg.slice("--status=".length)))
+    .filter(Number.isFinite);
+}
+
 function makeContext() {
   const context = {
     console,
@@ -162,6 +169,58 @@ function matchLeg(legs, expected) {
   });
 }
 
+function compactStatus(status) {
+  if (!status) return null;
+  return {
+    time: fmtTime(status.time),
+    positionSide: status.positionSide,
+    positionAvgPrice: status.positionAvgPrice,
+    positionActiveStop: status.positionActiveStop,
+    positionTrailRef: status.positionTrailRef,
+    triggerText: status.triggerText,
+    triggerTf: status.triggerTf,
+    triggerSide: status.triggerSide,
+    triggerCode: status.triggerCode,
+    triggerStop: status.triggerStop,
+    triggerStopRef: status.triggerStopRef,
+    triggerSlPct: status.triggerSlPct,
+    triggerQualityScore: status.triggerQualityScore,
+    qualityOk: status.qualityOk,
+    qualityGap: status.qualityGap,
+    softLowQualitySetup: status.softLowQualitySetup,
+    lowQualitySetup: status.lowQualitySetup,
+    entryMode: status.entryMode,
+    entryActionText: status.entryActionText,
+    entryReasonCode: status.entryReasonCode,
+    entryReasonDetail: status.entryReasonDetail,
+    panelReasonCode: status.panelReasonCode,
+    panelReasonDetail: status.panelReasonDetail,
+    mtfState: status.mtfState,
+    d2Regime: status.d2Regime,
+    currentPanelState: status.currentPanelState,
+    currentPoint: status.currentPoint,
+    currentSide: status.currentSide,
+    currentH4MidNoiseState: status.currentH4MidNoiseState,
+    h12PanelState: status.h12PanelState,
+    h12Point: status.h12Point,
+    h12Side: status.h12Side,
+    h12ReadinessCode: status.h12ReadinessCode,
+    d1PanelState: status.d1PanelState,
+    d1Point: status.d1Point,
+    d1Side: status.d1Side,
+    d2PanelState: status.d2PanelState,
+    d2Point: status.d2Point,
+    d2Side: status.d2Side,
+    thesisStage: status.thesisStage,
+    thesisFrameLevel: status.thesisFrameLevel,
+    thesisFrameState: status.thesisFrameState,
+    thesisBrokenSignal: status.thesisBrokenSignal,
+    thesisBrokenConfirmed: status.thesisBrokenConfirmed,
+    flatEntryReady: status.flatEntryReady,
+    topUpReady: status.topUpReady,
+  };
+}
+
 async function main() {
   const context = makeContext();
   vm.createContext(context);
@@ -252,6 +311,20 @@ async function main() {
 
   console.log(`Strategy fingerprint: ${strategyConfigFingerprint()}`);
   console.log(`Orders: ${core.orders.length}, legs: ${legs.length}`);
+
+  const requestedStatusTimes = cliStatusTimes();
+  if (requestedStatusTimes.length) {
+    const statusByTime = new Map(core.status.history.map((status) => [status.time, status]));
+    console.log("\nRequested status snapshots:");
+    for (const time of requestedStatusTimes) {
+      const status = statusByTime.get(time);
+      const ordersAtTime = core.orders
+        .filter((order) => order.time === time)
+        .map((order) => `${order.action} ${order.text} @ ${priceText(order.price)} q=${qtyText(order.qty)} ${order.detail || ""}`);
+      console.log(`\n${fmtTime(time)}`);
+      console.log(JSON.stringify({ status: compactStatus(status), orders: ordersAtTime }, null, 2));
+    }
+  }
 
   let failed = 0;
   for (const expected of expectedLegs) {

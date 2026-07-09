@@ -2078,6 +2078,17 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const h12AlreadyProcessed = triggerTf === "H12" && h12DuplicateProcessed;
     const h12DuplicateBlocked = h12DuplicateProcessed && h12RawUsableTrigger && !currentUsableTrigger;
     const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus && !h12AlreadyProcessed;
+    const h4OppositeTrigger = positionSide !== 0 && currentUsableTrigger && currentTriggerSide === -positionSide;
+    const h12OppositeTrigger = positionSide !== 0 && h12UsableTrigger && h12TriggerSide === -positionSide;
+    const h4AgainstPosition = positionSide !== 0 && current.side === -positionSide && current.point >= 3;
+    const d2RegimeForPosition = regimeState(positionSide, d2.bias, d2.trap);
+    const d2AgainstPosition = positionSide !== 0 && (d2RegimeForPosition === "D2_OPPOSE" || d2RegimeForPosition === "D2_TRAP");
+    const h12TrendAligned = positionSide !== 0 && semanticFamilySide(h12.semanticState) === positionSide && semanticTriggerTier(h12.semanticState) >= 2;
+    const d2TrendAllowsHold = positionSide !== 0 && (d2RegimeForPosition === "D2_SUPPORT" || d2RegimeForPosition === "D2_NEUTRAL" || STRATEGY_INPUTS.allowH4EarlyD2Override);
+    const trendHold = thesisFrameLevel >= 2 && d2TrendAllowsHold;
+    const h4Pullback = trendHold && h4AgainstPosition;
+    const h12AgainstPosition = positionSide !== 0 && h12.side === -positionSide && h12.point >= (trendHold ? 5 : 4);
+    const h4WarningOnly = h4OppositeTrigger || h4AgainstPosition;
     const h4OriginFlowBlocked = positionSide === 0 && triggerTf === "H12" && actionableEntry;
     const postThesisBreakSameSideBlocked = positionSide === 0 && postThesisBreakLockActive && actionableEntry && triggerSide === postThesisBreakBlockedSide;
     const entryRiskPct = entryMode === "FULL ENTRY" ? fullRiskPct : entryMode === "PARTIAL ONLY" ? partialRiskPct : null;
@@ -2162,7 +2173,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     else if (softLowQualitySetup) entryActionText = "SOFT_LOW_QUALITY";
     else if (flatEntryReady && (h4D2SoftProbe || h4D2Override)) entryActionText = "H4_D2_GATE";
     else if (flatEntryReady) entryActionText = entryMode;
-    else if (positionSide !== 0 && currentTriggerSide === -positionSide) entryActionText = "H4_WARNING";
+    else if (h4Pullback) entryActionText = "PULLBACK";
+    else if (trendHold) entryActionText = "TREND_HOLD";
+    else if (h4WarningOnly && positionSide !== 0) entryActionText = "H4_WARNING";
     else if (h4D2SoftProbe || h4D2Override) entryActionText = "H4_D2_GATE";
 
     let entryReasonCode = entryMode;
@@ -2183,7 +2196,9 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     else if (!qualityOk && preQualityActionable && validTriggerStop && !softLowQualitySetup) entryReasonCode = "BLOCK_LOW_QUALITY";
     else if (softLowQualitySetup) entryReasonCode = `ENTER_SOFT_${triggerTf}_${triggerSide === 1 ? "BUY" : "SELL"}`;
     else if (flatEntryReady) entryReasonCode = `ENTER_${triggerTf}_${triggerSide === 1 ? "BUY" : "SELL"}`;
-    else if (positionSide !== 0 && currentTriggerSide === -positionSide) entryReasonCode = "WARN_H4_COUNTER";
+    else if (h4Pullback) entryReasonCode = "HOLD_PULLBACK";
+    else if (trendHold) entryReasonCode = "HOLD_TREND";
+    else if (h4WarningOnly && positionSide !== 0) entryReasonCode = "WARN_H4_COUNTER";
     else if (!rawHasTrigger) entryReasonCode = "NO_TRIGGER";
     else if (positionSide !== 0 && oppositePosition) entryReasonCode = "BLOCK_OPPOSITE_POSITION";
     else if (positionSide !== 0 && sameSidePosition) entryReasonCode = "HOLD_SAME_SIDE";
@@ -2288,6 +2303,16 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       h12DuplicateBlocked,
       h4D2SoftProbe,
       h4D2Override,
+      h4OppositeTrigger,
+      h12OppositeTrigger,
+      h4AgainstPosition,
+      h12AgainstPosition,
+      d2RegimeForPosition,
+      d2AgainstPosition,
+      h12TrendAligned,
+      trendHold,
+      h4Pullback,
+      h4WarningOnly,
       entryMode,
       entryActionText,
       entryReasonCode,

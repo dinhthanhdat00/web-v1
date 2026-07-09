@@ -130,7 +130,7 @@ const RSI_RULES = [
 
 const MANUAL_RULE_STORAGE_KEY = "manualRsiRuleConfig";
 const TWO_RULE_STORAGE_KEY = "twoRsiRuleConfig";
-const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryDraftV1";
+const TRADE_HISTORY_STORAGE_KEY = "singleTradeHistoryDraftV2";
 const TRADE_HISTORY_LIMIT = 600;
 const STRATEGY_PARITY_READY = false;
 const SHOW_DRAFT_STRATEGY_ORDERS = true;
@@ -201,17 +201,19 @@ function strategyOrderDisplayMarkers(orders) {
   return orders.map((order) => {
     const code = String(order.text || "").match(/\b([LS])\s+([BS]\d)\b/);
     const compactEntry = code ? `IN ${code[2]}` : "IN";
+    const isStop = order.text === "SL";
     const text = order.action === "entry"
       ? String(order.text || "").startsWith("ADD") ? "ADD" : compactEntry
-      : order.text === "SL" ? "SL" : "OUT";
+      : isStop ? "SL" : "OUT";
     const isLongEntry = order.action === "entry" && order.position === "belowBar";
     const isShortEntry = order.action === "entry" && order.position === "aboveBar";
     const isExit = order.action === "exit";
     return {
       ...order,
+      originalText: order.text,
       text,
-      size: isExit ? 2 : 2,
-      color: isExit ? "#ff4fd8" : isLongEntry ? "#304cff" : isShortEntry ? "#d000ff" : order.color
+      size: isExit ? 3 : 3,
+      color: isExit ? isStop ? "#ff5a66" : "#ff4fd8" : isLongEntry ? "#304cff" : isShortEntry ? "#d000ff" : order.color
     };
   });
 }
@@ -383,17 +385,21 @@ function saveTradeHistory(items) {
 
 function normalizeTradeOrder(symbol, timeframe, order) {
   const key = [symbol, timeframe, order.time, order.action, order.text, order.position].join("|");
+  const side = order.position === "belowBar" ? order.action === "entry" ? "Long" : "Short" : order.action === "entry" ? "Short" : "Long";
+  const qty = Number.isFinite(order.qty) ? order.qty : null;
   return {
     key,
     time: order.time,
     timeLabel: formatChartTime(order.time),
     symbol,
     timeframe,
+    side,
     type: tradeTypeLabel(order),
     tag: order.text || "--",
     price: Number.isFinite(order.price) ? order.price : null,
     priceLabel: formatTradePrice(order.price),
-    qty: Number.isFinite(order.qty) ? order.qty : null,
+    qty,
+    qtyLabel: qty == null ? "--" : qty.toFixed(4).replace(/0+$/, "").replace(/\.$/, ""),
     commission: Number.isFinite(order.commission) ? order.commission : null,
     equity: Number.isFinite(order.equity) ? order.equity : null,
     detail: order.detail || order.text || "--",
@@ -415,14 +421,16 @@ function renderTradeHistory() {
           <td>${escapeHtml(item.timeLabel)}</td>
           <td>${escapeHtml(item.symbol)}</td>
           <td>${escapeHtml(item.timeframe)}</td>
+          <td>${escapeHtml(item.side || "--")}</td>
           <td><span class="trade-type ${tone}">${escapeHtml(item.type)}</span></td>
           <td><b class="trade-tag">${escapeHtml(item.tag)}</b></td>
           <td>${escapeHtml(item.priceLabel)}</td>
+          <td>${escapeHtml(item.qtyLabel || "--")}</td>
           <td>${escapeHtml(item.detail)}</td>
         </tr>
       `;
       }).join("")
-    : `<tr><td class="trade-empty" colspan="8">No saved Single strategy orders yet.</td></tr>`;
+    : `<tr><td class="trade-empty" colspan="10">No saved Single strategy orders yet.</td></tr>`;
 
   const entryCount = history.filter((item) => item.action === "entry").length;
   const exitCount = history.filter((item) => item.action === "exit").length;
@@ -3268,6 +3276,8 @@ class SingleFramePanel {
         d2: this.parityCandles.d2.length,
         visibleOrders: visibleOrderDisplayMarkers.length,
         visibleSignals: visibleSignalMarkers.length,
+        visibleFrom: chartStartTime,
+        visibleTo: chartEndTime,
         totalOrders: orderSource.length
       });
       document.body.dataset.singleClosedTradesDebug = JSON.stringify({

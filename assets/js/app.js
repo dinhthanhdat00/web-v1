@@ -216,6 +216,82 @@ function strategyOrderDisplayMarkers(orders) {
   });
 }
 
+function buildClosedTradesFromOrders(orders) {
+  const trades = [];
+  let open = null;
+
+  orders.forEach((order) => {
+    const qty = Number(order.qty);
+    const price = Number(order.price);
+    const commission = Number(order.commission) || 0;
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) return;
+
+    if (order.action === "entry") {
+      const side = order.position === "belowBar" ? 1 : -1;
+      if (!open || open.side !== side) {
+        open = {
+          side,
+          qty: 0,
+          avgEntryPrice: 0,
+          entryTime: order.time,
+          entryText: order.text || "",
+          entryDetail: order.detail || "",
+          entryCommission: 0,
+          entryOrders: []
+        };
+      }
+
+      const nextQty = open.qty + qty;
+      open.avgEntryPrice = open.qty > 0 ? (open.avgEntryPrice * open.qty + price * qty) / nextQty : price;
+      open.qty = nextQty;
+      open.entryCommission += commission;
+      open.entryOrders.push({
+        time: order.time,
+        text: order.text,
+        price,
+        qty,
+        commission,
+        detail: order.detail
+      });
+      return;
+    }
+
+    if (order.action === "exit" && open) {
+      const grossPnl = open.side === 1 ? (price - open.avgEntryPrice) * open.qty : (open.avgEntryPrice - price) * open.qty;
+      const totalCommission = open.entryCommission + commission;
+      const netPnl = grossPnl - totalCommission;
+      const entryNotional = open.avgEntryPrice * open.qty;
+      trades.push({
+        tradeNumber: trades.length + 1,
+        side: open.side === 1 ? "long" : "short",
+        entryTime: open.entryTime,
+        exitTime: order.time,
+        entryPrice: open.avgEntryPrice,
+        exitPrice: price,
+        qty: open.qty,
+        entryText: open.entryText,
+        exitText: order.text || "",
+        entryDetail: open.entryDetail,
+        exitDetail: order.detail || "",
+        entryCommission: open.entryCommission,
+        exitCommission: commission,
+        totalCommission,
+        grossPnl,
+        netPnl,
+        returnPct: entryNotional > 0 ? netPnl / entryNotional * 100 : null,
+        equityAfterExit: order.equity,
+        entryOrders: open.entryOrders
+      });
+      open = null;
+    }
+  });
+
+  return {
+    closed: trades,
+    open
+  };
+}
+
 function displayD2Regime(value) {
   if (value === "D2_SUPPORT") return "SUPPORT";
   if (value === "D2_NEUTRAL") return "NEUTRAL";
@@ -317,6 +393,9 @@ function normalizeTradeOrder(symbol, timeframe, order) {
     tag: order.text || "--",
     price: Number.isFinite(order.price) ? order.price : null,
     priceLabel: formatTradePrice(order.price),
+    qty: Number.isFinite(order.qty) ? order.qty : null,
+    commission: Number.isFinite(order.commission) ? order.commission : null,
+    equity: Number.isFinite(order.equity) ? order.equity : null,
     detail: order.detail || order.text || "--",
     action: order.action || "signal"
   };
@@ -3141,6 +3220,7 @@ class SingleFramePanel {
     const orderSource = parityCore ? parityCore.orders : strategyCore.orders;
     const signalMarkers = parityCore?.rsiMarkers || strategyCore.markers;
     const orderDisplayMarkers = strategyOrderDisplayMarkers(orderSource);
+    const tradeSummary = buildClosedTradesFromOrders(orderSource);
     const chartStartTime = candles[0]?.time ?? 0;
     const chartEndTime = candles.at(-1)?.time ?? Number.POSITIVE_INFINITY;
     const visibleOrderDisplayMarkers = orderDisplayMarkers.filter((order) => order.time >= chartStartTime && order.time <= chartEndTime);
@@ -3154,6 +3234,7 @@ class SingleFramePanel {
         parityCore,
         strategyCore,
         orderSource,
+        tradeSummary,
         visibleOrderDisplayMarkers,
         visibleSignalMarkers,
         visibleStatusHistory
@@ -3188,6 +3269,11 @@ class SingleFramePanel {
         visibleOrders: visibleOrderDisplayMarkers.length,
         visibleSignals: visibleSignalMarkers.length,
         totalOrders: orderSource.length
+      });
+      document.body.dataset.singleClosedTradesDebug = JSON.stringify({
+        closedCount: tradeSummary.closed.length,
+        open: tradeSummary.open,
+        closed: tradeSummary.closed
       });
       document.body.dataset.singleStatusDebug = JSON.stringify((parityCore?.status?.history || []).map((status) => ({
         time: status.time,

@@ -218,6 +218,28 @@ function strategyOrderDisplayMarkers(orders) {
   });
 }
 
+function snapMarkersToCandles(markers, candles) {
+  if (!markers.length || !candles.length) return [];
+  const exactTimes = new Set(candles.map((candle) => candle.time));
+  const times = candles.map((candle) => candle.time);
+  return markers.map((marker) => {
+    if (exactTimes.has(marker.time)) return marker;
+    let left = 0;
+    let right = times.length - 1;
+    let snapped = times[0];
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      if (times[mid] <= marker.time) {
+        snapped = times[mid];
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+    return { ...marker, originalTime: marker.time, time: snapped };
+  });
+}
+
 function buildClosedTradesFromOrders(orders) {
   const trades = [];
   let open = null;
@@ -365,6 +387,66 @@ function buildClosedTradeLegsFromOrders(orders) {
   });
 
   return { closed, open: openLegs };
+}
+
+function withTemporaryStrategyOptions({ inputs = {}, config = {} }, callback) {
+  const savedInputs = {};
+  const savedConfig = {};
+  Object.entries(inputs).forEach(([key, value]) => {
+    savedInputs[key] = STRATEGY_INPUTS[key];
+    STRATEGY_INPUTS[key] = value;
+  });
+  Object.entries(config).forEach(([key, value]) => {
+    savedConfig[key] = STRATEGY_CONFIG[key];
+    STRATEGY_CONFIG[key] = value;
+  });
+
+  try {
+    return callback();
+  } finally {
+    Object.entries(savedInputs).forEach(([key, value]) => {
+      STRATEGY_INPUTS[key] = value;
+    });
+    Object.entries(savedConfig).forEach(([key, value]) => {
+      STRATEGY_CONFIG[key] = value;
+    });
+  }
+}
+
+function strategyExperimentSummary(label, orders) {
+  const legs = buildClosedTradeLegsFromOrders(orders);
+  const from = Date.UTC(2026, 4, 8) / 1000;
+  const to = Date.UTC(2026, 5, 28) / 1000;
+  return {
+    label,
+    orderCount: orders.length,
+    legClosed: legs.closed.length,
+    open: legs.open,
+    tail: legs.closed.slice(-12),
+    mayJuneOrders: orders.filter((order) => order.time >= from && order.time <= to)
+  };
+}
+
+function buildStrategyDebugExperiments(parityCandles) {
+  const shiftedD2 = aggregateCandlesByTime(
+    parityCandles.d1.map((candle) => ({ ...candle, time: candle.time - 24 * 60 * 60 })),
+    2,
+    24 * 60 * 60
+  ).map((candle) => ({ ...candle, time: candle.time + 24 * 60 * 60 }));
+  const variants = [
+    ["baseline", {}, parityCandles.d2],
+    ["d2Shift1d", {}, shiftedD2],
+    ["entrySwingOff", { inputs: { enableH4SwingTrail: false } }, parityCandles.d2],
+    ["softProbeOff", { config: { allowSoftLowQualityProbe: false } }, parityCandles.d2],
+    ["directIoff", { config: { allowDirectITriggers: false } }, parityCandles.d2],
+    ["strictFormOn", { config: { requireStrictFormSequence: true } }, parityCandles.d2],
+    ["earlyD2OverrideOff", { inputs: { allowH4EarlyD2Override: false } }, parityCandles.d2]
+  ];
+
+  return variants.map(([label, options, d2Candles]) => withTemporaryStrategyOptions(options, () => {
+    const core = computeV17ParityEvents(parityCandles.h4, parityCandles.h12, parityCandles.d1, d2Candles);
+    return strategyExperimentSummary(label, core.orders);
+  }));
 }
 
 function displayD2Regime(value) {
@@ -3352,7 +3434,7 @@ class SingleFramePanel {
     const tradeLegSummary = buildClosedTradeLegsFromOrders(orderSource);
     const chartStartTime = candles[0]?.time ?? 0;
     const chartEndTime = candles.at(-1)?.time ?? Number.POSITIVE_INFINITY;
-    const visibleOrderDisplayMarkers = orderDisplayMarkers.filter((order) => order.time >= chartStartTime && order.time <= chartEndTime);
+    const visibleOrderDisplayMarkers = snapMarkersToCandles(orderDisplayMarkers.filter((order) => order.time >= chartStartTime && order.time <= chartEndTime), candles);
     const visibleSignalMarkers = signalMarkers.filter((marker) => marker.time >= chartStartTime && marker.time <= chartEndTime);
     const visibleStatusHistory = (parityCore?.status?.history || []).filter((status) => status.time >= chartStartTime && status.time <= chartEndTime);
     if (queryParams().has("debugStrategy")) {
@@ -3458,6 +3540,9 @@ class SingleFramePanel {
         long: stopPlotData(parityCore?.status?.history || [], 1),
         short: stopPlotData(parityCore?.status?.history || [], -1)
       });
+      if (parityCore && queryParams().has("debugExperiments")) {
+        document.body.dataset.singleStrategyExperimentsDebug = JSON.stringify(buildStrategyDebugExperiments(this.parityCandles));
+      }
     }
     if (SHOW_DRAFT_STRATEGY_ORDERS) mergeTradeHistory(currentSymbol, this.config.label, orderSource);
     const latestEntry = SHOW_DRAFT_STRATEGY_ORDERS ? orderSource.filter((order) => order.action === "entry").at(-1) : null;

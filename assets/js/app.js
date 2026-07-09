@@ -826,12 +826,9 @@ function emaFromValues(values, length) {
   const k = 2 / (length + 1);
   let previous = null;
 
-  values.forEach((point, index) => {
-    if (index < length - 1) return;
-
+  values.forEach((point) => {
     if (previous === null) {
-      const slice = values.slice(index - length + 1, index + 1);
-      previous = slice.reduce((sum, item) => sum + item.value, 0) / length;
+      previous = point.value;
     } else {
       previous = point.value * k + previous * (1 - k);
     }
@@ -1007,7 +1004,7 @@ function freshAt(flags, index) {
 }
 
 function trapCode(rsiValue, noiseState) {
-  if (noiseState) return 0;
+  if (noiseState) return 2;
   if (rsiValue >= STRATEGY_CONFIG.trapHighLevel) return 1;
   if (rsiValue <= STRATEGY_CONFIG.trapLowLevel) return -1;
   return 0;

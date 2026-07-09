@@ -1053,7 +1053,15 @@ function rollingBarssince(flags, index) {
   for (let i = index; i >= 0; i -= 1) {
     if (flags[i]) return index - i;
   }
-  return Infinity;
+  return null;
+}
+
+function pineGt(value, threshold) {
+  return value != null && value > threshold;
+}
+
+function pineBetween(value, min, max) {
+  return value != null && value >= min && value <= max;
 }
 
 function freshAt(flags, index) {
@@ -1198,8 +1206,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
     const previewTrap = trapCode(row.rsi, noiseState);
     const previewSemanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, previewTrap, buyConverging, sellConverging, row.rsi, row.ema, row.wma, previewStateAgeBars);
 
-    const switchToBuyI = belowBoth && linesExpanding && barsSinceWmaDown > 1 && (side !== 1 || point !== 1);
-    const switchToSellI = aboveBoth && linesExpanding && barsSinceWmaUp > 1 && (side !== -1 || point !== 1);
+    const switchToBuyI = belowBoth && linesExpanding && pineGt(barsSinceWmaDown, 1) && (side !== 1 || point !== 1);
+    const switchToSellI = aboveBoth && linesExpanding && pineGt(barsSinceWmaUp, 1) && (side !== -1 || point !== 1);
     const buyIIEvent = buyPointsAllowed && side === 1 && point === 1 && buyConverging && (rsiTroughVal != null || spreadShrinking);
     const sellIIEvent = sellPointsAllowed && side === -1 && point === 1 && sellConverging && (rsiPeakVal != null || spreadShrinking);
     const buy1Event = buyPointsAllowed && side === 1 && point === 2 && emaCrossUp && row.rsi < row.wma && !noiseState;
@@ -1218,8 +1226,8 @@ function computeStrategyCurrentTfEvents(candles, rsiData, rsiEmaData, rsiWmaData
     const sell2Event = freshAt(sell2Condition, index) || sell2DirectFromI;
     const buy3DirectFromII = buyPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && buyIIEvent && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
     const sell3DirectFromII = sellPointsAllowed && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && sellIIEvent && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
-    const buy3WindowFromII = buyPointsAllowed && side === 1 && point === 2 && index > (stateBar ?? -1) && barsSinceWmaUp >= 0 && barsSinceWmaUp <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
-    const sell3WindowFromII = sellPointsAllowed && side === -1 && point === 2 && index > (stateBar ?? -1) && barsSinceWmaDown >= 0 && barsSinceWmaDown <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3WindowFromII = buyPointsAllowed && side === 1 && point === 2 && index > (stateBar ?? -1) && pineBetween(barsSinceWmaUp, 0, STRATEGY_CONFIG.iiTo3WindowBars) && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3WindowFromII = sellPointsAllowed && side === -1 && point === 2 && index > (stateBar ?? -1) && pineBetween(barsSinceWmaDown, 0, STRATEGY_CONFIG.iiTo3WindowBars) && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
     const buy3Impulse = buyPointsAllowed && side === 1 && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
     const sell3Impulse = sellPointsAllowed && side === -1 && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
     const buy3Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && !noiseState && (point >= 3 && wmaCrossUp || buy3WindowFromII);
@@ -1335,7 +1343,7 @@ function barssince(flags, index) {
   for (let i = index; i >= 0; i -= 1) {
     if (flags[i]) return index - i;
   }
-  return Infinity;
+  return null;
 }
 
 function lowest(candles, index, lookback, field = "low") {
@@ -1535,11 +1543,13 @@ function computeFramePacks(candles) {
     const sellPointsAllowed = !STRATEGY_CONFIG.filterPointsByEmaWmaTrend || emaWmaTrendSide === 1;
     const rsiPeakVal = index > 1 && prev.rsi > aligned[index - 2]?.rsi && prev.rsi > row.rsi ? prev.rsi : null;
     const rsiTroughVal = index > 1 && prev.rsi < aligned[index - 2]?.rsi && prev.rsi < row.rsi ? prev.rsi : null;
+    const barsSinceWmaUp = barssince(wmaCrossUpFlags, index);
+    const barsSinceWmaDown = barssince(wmaCrossDownFlags, index);
     const previewStateAgeBars = stateBar == null ? 0 : index - stateBar;
     const previewTrap = trapCode(row.rsi, noiseState);
     const previewSemanticState = resolveStrategySemanticState(semanticState, side, point, aboveBoth, belowBoth, linesExpanding, spreadShrinking, noiseState, previewTrap, buyConverging, sellConverging, row.rsi, row.ema, row.wma, previewStateAgeBars);
-    const switchToBuyI = belowBoth && linesExpanding && barssince(wmaCrossDownFlags, index) > 1 && (side !== 1 || point !== 1);
-    const switchToSellI = aboveBoth && linesExpanding && barssince(wmaCrossUpFlags, index) > 1 && (side !== -1 || point !== 1);
+    const switchToBuyI = belowBoth && linesExpanding && pineGt(barsSinceWmaDown, 1) && (side !== 1 || point !== 1);
+    const switchToSellI = aboveBoth && linesExpanding && pineGt(barsSinceWmaUp, 1) && (side !== -1 || point !== 1);
     const buyIIEvent = buyPointsAllowed && side === 1 && point === 1 && buyConverging && (rsiTroughVal != null || spreadShrinking);
     const sellIIEvent = sellPointsAllowed && side === -1 && point === 1 && sellConverging && (rsiPeakVal != null || spreadShrinking);
     const buy1Event = buyPointsAllowed && side === 1 && point === 2 && emaCrossUp && row.rsi < row.wma && !noiseState;
@@ -1559,8 +1569,8 @@ function computeFramePacks(candles) {
     const sell2Event = freshAt(sell2Condition, index) || sell2DirectFromI;
     const buy3DirectFromII = buyPointsAllowed && !strictForm && STRATEGY_CONFIG.allowDirectITriggers && side === 1 && point === 1 && buyIIEvent && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
     const sell3DirectFromII = sellPointsAllowed && !strictForm && STRATEGY_CONFIG.allowDirectITriggers && side === -1 && point === 1 && sellIIEvent && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
-    const buy3WindowFromII = buyPointsAllowed && !strictForm && side === 1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossUpFlags, index) >= 0 && barssince(wmaCrossUpFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
-    const sell3WindowFromII = sellPointsAllowed && !strictForm && side === -1 && point === 2 && index > (stateBar ?? -1) && barssince(wmaCrossDownFlags, index) >= 0 && barssince(wmaCrossDownFlags, index) <= STRATEGY_CONFIG.iiTo3WindowBars && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
+    const buy3WindowFromII = buyPointsAllowed && !strictForm && side === 1 && point === 2 && index > (stateBar ?? -1) && pineBetween(barsSinceWmaUp, 0, STRATEGY_CONFIG.iiTo3WindowBars) && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
+    const sell3WindowFromII = sellPointsAllowed && !strictForm && side === -1 && point === 2 && index > (stateBar ?? -1) && pineBetween(barsSinceWmaDown, 0, STRATEGY_CONFIG.iiTo3WindowBars) && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
     const buy3Impulse = buyPointsAllowed && !strictForm && side === 1 && wmaCrossUp && row.rsi > row.ema && row.rsi > row.wma && !noiseState;
     const sell3Impulse = sellPointsAllowed && !strictForm && side === -1 && wmaCrossDown && row.rsi < row.ema && row.rsi < row.wma && !noiseState;
     const buy3Candidate = buyPointsAllowed && side === 1 && index > (stateBar ?? -1) && !noiseState && (((strictForm ? point === 4 : point >= 3) && wmaCrossUp) || buy3WindowFromII);

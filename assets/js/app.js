@@ -949,6 +949,31 @@ const STRATEGY_INPUTS = {
   showStopPlots: false
 };
 
+function strategyConfigFingerprint() {
+  return [
+    `R${params.rsiLength}E${params.rsiEmaLength}W${params.rsiWmaLength}`,
+    `M${STRATEGY_INPUTS.mtfMode === "context" ? "C" : STRATEGY_INPUTS.mtfMode === "strict" ? "S" : "O"}`,
+    `I${STRATEGY_CONFIG.allowDirectITriggers ? "1" : "0"}`,
+    `D2${STRATEGY_INPUTS.allowH4EarlyD2Override ? "1" : "0"}`,
+    `FW${STRATEGY_CONFIG.filterPointsByEmaWmaTrend ? "1" : "0"}`,
+    `RT${STRATEGY_INPUTS.allowRealtimeCurrentTfEntries ? "1" : "0"}`,
+    `SQ${STRATEGY_CONFIG.allowSoftLowQualityProbe ? "1" : "0"}/${STRATEGY_CONFIG.softQualityBuffer}`,
+    "RV1",
+    `PH${STRATEGY_INPUTS.enableProgressiveHold ? "1" : "0"}/${STRATEGY_INPUTS.thesisBreakConfirmBars}/${STRATEGY_INPUTS.allowPromotionScaleIn ? "1" : "0"}/${STRATEGY_INPUTS.allowContinuationAddAfterBE ? "1" : "0"}/${STRATEGY_INPUTS.maxContinuationAddsPerThesis}`,
+    `SW${STRATEGY_INPUTS.enableH4SwingTrail ? "1" : "0"}/${STRATEGY_INPUTS.h4SwingPivotBars}/${STRATEGY_INPUTS.h4SwingTrailPivotBars}/${STRATEGY_INPUTS.h4FormTrailLookback}/${STRATEGY_INPUTS.h4SwingSlBuffer}/${STRATEGY_INPUTS.h4SwingTrailAfterOneR ? "1" : "0"}/${STRATEGY_INPUTS.useStructureConfirmedH4SwingTrail ? "1" : "0"}`,
+    `BE${STRATEGY_INPUTS.enableBreakEvenAtTwoR ? "1" : "0"}/${STRATEGY_INPUTS.breakEvenRMultiple}`,
+    `N${STRATEGY_CONFIG.noiseLookback}/${STRATEGY_CONFIG.noiseCrossCount}/IG${STRATEGY_CONFIG.ignoreH4NoiseGate ? "1" : "0"}`,
+    `Z${STRATEGY_CONFIG.h4MidZoneLow}-${STRATEGY_CONFIG.h4MidZoneHigh}`,
+    `MZ${STRATEGY_CONFIG.h4MidNoiseLookback}/${STRATEGY_CONFIG.h4MidNoiseMinBars}`,
+    `II${STRATEGY_CONFIG.iiTo3WindowBars}`,
+    `SF${STRATEGY_CONFIG.stateFreshBars}`,
+    `SS${STRATEGY_CONFIG.iiTo3WindowBars + STRATEGY_CONFIG.stateFreshBars + 2}`,
+    `SL${STRATEGY_CONFIG.setupStopLookback}`,
+    `T${STRATEGY_CONFIG.trapHighLevel}/${STRATEGY_CONFIG.trapLowLevel}`,
+    `R${STRATEGY_INPUTS.htfReadinessLookback}`
+  ].join("|");
+}
+
 const SEM = {
   INIT: 0,
   NEUTRAL_REARM: 1,
@@ -1860,7 +1885,6 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const triggerLane = triggerTf === "H12" ? "swing" : "early";
     const triggerStop = triggerSide === 1 ? current.entryLongStop : triggerSide === -1 ? current.entryShortStop : null;
     const triggerStopRef = triggerSide === 1 ? current.entryLongStopRef : triggerSide === -1 ? current.entryShortStopRef : "-";
-    const triggerText = bothTriggerConflict ? "H4/H12 conflict" : triggerLabel(triggerTf, triggerLane, triggerSide, triggerCode);
     const otherSemanticState = preferH12 ? current.semanticState : h12.semanticState;
     const otherSide = semanticFamilySide(otherSemanticState);
     const otherTriggerTier = semanticTriggerTier(otherSemanticState);
@@ -1876,6 +1900,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const triggerTrapWait = h12TrapAgainstTrigger || currentTrapAgainstTrigger;
     const h4NoiseWait = h4NoiseSuppressCurrent && !STRATEGY_CONFIG.ignoreH4NoiseGate && !h12UsableTrigger;
     const hasTrigger = h12UsableTrigger || currentUsableTrigger;
+    const triggerText = bothTriggerConflict ? "H4/H12 conflict" : h12ReadinessBlocked ? "H12 stretched wait" : h4NoiseWait ? "H4 noise wait" : triggerLabel(triggerTf, triggerLane, triggerSide, triggerCode);
     const mtfMode = STRATEGY_INPUTS.mtfMode;
     const mtfState = strongConflict ? "MTF_STRONG_CONFLICT" : mtfMode === "off" ? hasTrigger ? "MTF_D2_NEUTRAL" : "MTF_NO_TRIGGER" : mtfStateLabel(hasTrigger, strongConflict, weakCounter, d2Regime);
     const baseEntryMode = strongConflict || triggerTrapWait ? "NO-TRADE" : mtfMode === "off" ? hasTrigger ? "PARTIAL ONLY" : "NO-TRADE" : entryModeLabel(hasTrigger, mtfState, d2Regime);
@@ -2051,7 +2076,8 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     const reverseNextBarValid = pendingReverseSide !== 0 && pendingReverseIndex != null && index === pendingReverseIndex + 1 && actionableEntry && triggerSide === pendingReverseSide;
     const effectiveEntryCooldownOk = entryCooldownOk || reverseNextBarValid;
     const h12AlreadyProcessed = triggerTf === "H12" && h12DuplicateProcessed;
-    const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus && !h12AlreadyProcessed && !h4NoiseWait;
+    const h12DuplicateBlocked = h12DuplicateProcessed && h12RawUsableTrigger && !currentUsableTrigger;
+    const canUseTrigger = actionableEntry && validTriggerStop && effectiveEntryCooldownOk && nonConsensusCooldownOk && freshAfterNonConsensus && !h12AlreadyProcessed;
     const h4OriginFlowBlocked = positionSide === 0 && triggerTf === "H12" && actionableEntry;
     const postThesisBreakSameSideBlocked = positionSide === 0 && postThesisBreakLockActive && actionableEntry && triggerSide === postThesisBreakBlockedSide;
     const entryRiskPct = entryMode === "FULL ENTRY" ? fullRiskPct : entryMode === "PARTIAL ONLY" ? partialRiskPct : null;
@@ -2128,7 +2154,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     else if (h12ReadinessBlocked) entryActionText = "HTF_STRETCHED_WAIT";
     else if (h4NoiseWait) entryActionText = "H4_NOISE_WAIT";
     else if (reentryBlocked) entryActionText = "WAIT_REENTRY";
-    else if (h12AlreadyProcessed) entryActionText = "HTF_DUPLICATE";
+    else if (h12DuplicateBlocked || h12AlreadyProcessed) entryActionText = "HTF_DUPLICATE";
     else if (h4OriginFlowBlocked) entryActionText = "H4_FIRST_WAIT";
     else if (postThesisBreakSameSideBlocked) entryActionText = "THESIS_REBUILD_WAIT";
     else if (invalidTriggerSetup) entryActionText = "INVALID_SL";
@@ -2150,7 +2176,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     else if (h12ReadinessBlocked) entryReasonCode = "BLOCK_H12_STRETCHED";
     else if (h4NoiseWait) entryReasonCode = "BLOCK_H4_NOISE";
     else if (reentryBlocked) entryReasonCode = "BLOCK_REENTRY_COOLDOWN";
-    else if (h12AlreadyProcessed) entryReasonCode = "BLOCK_DUP_H12";
+    else if (h12DuplicateBlocked || h12AlreadyProcessed) entryReasonCode = "BLOCK_DUP_H12";
     else if (h4OriginFlowBlocked) entryReasonCode = "BLOCK_H4_FIRST_FLOW";
     else if (postThesisBreakSameSideBlocked) entryReasonCode = "BLOCK_POST_THESIS_BREAK_SAME_SIDE";
     else if (invalidTriggerSetup) entryReasonCode = "BLOCK_INVALID_SL";
@@ -2175,7 +2201,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
     else if (topUpBlockedPyramid) entryReasonDetail = `open legs ${openThesisLegs}/${maxOpenThesisLegs}`;
     else if (topUpBlockedCap) entryReasonDetail = "capital usage cap reached";
     else if (topUpBlockedQty) entryReasonDetail = "top-up qty 0";
-    else if (h12AlreadyProcessed) entryReasonDetail = `H12@${h12.triggerTime ?? "-"}`;
+    else if (h12DuplicateBlocked || h12AlreadyProcessed) entryReasonDetail = `H12@${h12.triggerTime ?? "-"}`;
     else if (h4OriginFlowBlocked) entryReasonDetail = "flat account waits H4 origin first";
     else if (postThesisBreakSameSideBlocked) entryReasonDetail = `wait opposite after ${thesisFrameLabel(postThesisBreakFrameLevel)} thesis break`;
     else if (!qualityOk && preQualityActionable && validTriggerStop) entryReasonDetail = `Q ${triggerQualityScore}/${STRATEGY_CONFIG.minQualityScore} gap ${qualityGap}`;
@@ -2259,6 +2285,7 @@ function computeV17ParityEvents(h4Candles, h12Candles, d1Candles, d2Candles) {
       softLowQualitySetup,
       lowQualitySetup,
       h12ReadinessBlocked,
+      h12DuplicateBlocked,
       h4D2SoftProbe,
       h4D2Override,
       entryMode,
@@ -3535,6 +3562,7 @@ class SingleFramePanel {
         closed: tradeLegSummary.closed
       });
       document.body.dataset.singleStatusDebug = JSON.stringify(parityCore?.status?.history || []);
+      document.body.dataset.singleStrategyConfigFingerprint = strategyConfigFingerprint();
       document.body.dataset.singleRsiMarkersDebug = JSON.stringify((parityCore?.rsiMarkers || signalMarkers).map((item) => ({
         time: item.time,
         text: item.text,
@@ -3557,7 +3585,7 @@ class SingleFramePanel {
       ? {
           tone: latestEntry ? latestEntry.position === "belowBar" ? "buy" : "sell" : "wait",
           label: "V17 WIP",
-          detail: latestEntry ? `Parity port: ${latestEntry.detail || latestEntry.text}` : "Porting RCStrV17 orders"
+          detail: latestEntry ? `Parity port: ${latestEntry.detail || latestEntry.text}` : strategyConfigFingerprint()
         }
       : !STRATEGY_PARITY_READY && SHOW_DRAFT_STRATEGY_ORDERS
       ? {

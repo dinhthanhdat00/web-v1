@@ -541,8 +541,15 @@ function pineRsiFrameState(candles) {
 
     return {
       time: row.time,
+      rsi: row.rsi,
       bias: semanticBiasCode(semanticState),
-      state: semanticState
+      state: semanticState,
+      buyII: buyIIEvent,
+      sellII: sellIIEvent,
+      buy2: buy2Event,
+      sell2: sell2Event,
+      buy3: buy3Event,
+      sell3: sell3Event
     };
   });
 }
@@ -586,6 +593,69 @@ function rsiRegimeData(candles, d2State = sharedD2State) {
       color: d2Bias === 1 ? "rgba(46,125,50,0.16)" : d2Bias === -1 ? "rgba(183,28,28,0.17)" : "rgba(0,0,0,0)"
     };
   });
+}
+
+function rsiSignalMarkers(frameState) {
+  const markers = [];
+
+  frameState.forEach((state) => {
+    if (state.buyII) {
+      markers.push({
+        time: state.time,
+        position: "belowBar",
+        color: "rgba(76,175,80,0.9)",
+        shape: "circle",
+        text: "II"
+      });
+    }
+    if (state.sellII) {
+      markers.push({
+        time: state.time,
+        position: "aboveBar",
+        color: "rgba(255,152,0,0.9)",
+        shape: "circle",
+        text: "II"
+      });
+    }
+    if (state.buy2) {
+      markers.push({
+        time: state.time,
+        position: "belowBar",
+        color: "rgba(46,125,50,0.86)",
+        shape: "square",
+        text: "2"
+      });
+    }
+    if (state.sell2) {
+      markers.push({
+        time: state.time,
+        position: "aboveBar",
+        color: "rgba(183,28,28,0.9)",
+        shape: "square",
+        text: "2"
+      });
+    }
+    if (state.buy3) {
+      markers.push({
+        time: state.time,
+        position: "belowBar",
+        color: "rgba(67,160,71,0.92)",
+        shape: "arrowUp",
+        text: "3"
+      });
+    }
+    if (state.sell3) {
+      markers.push({
+        time: state.time,
+        position: "aboveBar",
+        color: "rgba(198,40,40,0.92)",
+        shape: "arrowDown",
+        text: "3"
+      });
+    }
+  });
+
+  return markers;
 }
 
 function jmaFromClose(candles, length, power, phase) {
@@ -919,12 +989,13 @@ class MarketPanel {
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    const rsiFrameState = pineRsiFrameState(candles);
     this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
     this.rsiLowSeries.setData([]);
     this.rsiHighSeries.setData([]);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers([]);
+    this.rsiSeries.setMarkers(rsiSignalMarkers(rsiFrameState));
     this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
     this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
     this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
@@ -1052,19 +1123,12 @@ class RsiOnlyPanel {
 
   draw(candles, rsiData, rsiEmaData, rsiWmaData, fit = false) {
     this.lastCandles = candles;
+    const rsiFrameState = pineRsiFrameState(candles);
     this.rsiRegimeSeries.setData(rsiRegimeData(candles));
     this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers(rsiData
-      .filter((point) => point.value <= RSI_LOW_LEVEL || point.value >= RSI_HIGH_LEVEL)
-      .map((point) => ({
-        time: point.time,
-        position: point.value >= RSI_HIGH_LEVEL ? "aboveBar" : "belowBar",
-        color: point.value >= RSI_HIGH_LEVEL ? "rgba(239,83,80,0.92)" : "rgba(76,175,80,0.92)",
-        shape: point.value >= RSI_HIGH_LEVEL ? "arrowDown" : "arrowUp",
-        text: point.value >= RSI_HIGH_LEVEL ? "80" : "20"
-      })));
+    this.rsiSeries.setMarkers(rsiSignalMarkers(rsiFrameState));
     this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
     this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
     this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
@@ -1363,19 +1427,12 @@ class SingleChartPanel {
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    const rsiFrameState = pineRsiFrameState(candles);
     this.rsiRegimeSeries.setData(rsiRegimeData(candles));
     this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers(rsiData
-      .filter((point) => point.value <= RSI_LOW_LEVEL || point.value >= RSI_HIGH_LEVEL)
-      .map((point) => ({
-        time: point.time,
-        position: point.value >= RSI_HIGH_LEVEL ? "aboveBar" : "belowBar",
-        color: point.value >= RSI_HIGH_LEVEL ? "rgba(239,83,80,0.92)" : "rgba(76,175,80,0.92)",
-        shape: point.value >= RSI_HIGH_LEVEL ? "arrowDown" : "arrowUp",
-        text: point.value >= RSI_HIGH_LEVEL ? "80" : "20"
-      })));
+    this.rsiSeries.setMarkers(rsiSignalMarkers(rsiFrameState));
     this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
     this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
     this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));

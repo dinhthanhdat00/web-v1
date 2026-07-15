@@ -1236,8 +1236,14 @@ class SingleChartPanel {
     return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
   }
 
+  d1KlineUrl() {
+    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=1d&limit=1000`;
+  }
+
   refreshCandles() {
-    this.candles = aggregateCandles(this.rawCandles, this.config.aggregate);
+    this.candles = this.config.apiTf === "1d" && this.config.aggregate > 1
+      ? aggregateDailyCandles(this.rawCandles, this.config.aggregate)
+      : aggregateCandles(this.rawCandles, this.config.aggregate);
   }
 
   focusLatest(bars = 220) {

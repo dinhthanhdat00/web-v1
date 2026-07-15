@@ -599,24 +599,6 @@ function rsiSignalMarkers(frameState) {
   const markers = [];
 
   frameState.forEach((state) => {
-    if (state.buyII) {
-      markers.push({
-        time: state.time,
-        position: "belowBar",
-        color: "rgba(76,175,80,0.9)",
-        shape: "circle",
-        text: "II"
-      });
-    }
-    if (state.sellII) {
-      markers.push({
-        time: state.time,
-        position: "aboveBar",
-        color: "rgba(255,152,0,0.9)",
-        shape: "circle",
-        text: "II"
-      });
-    }
     if (state.buy2) {
       markers.push({
         time: state.time,

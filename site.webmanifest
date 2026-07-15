@@ -1,7 +1,7 @@
 {
-  "name": "Crypto Matrix",
-  "short_name": "Crypto Matrix",
-  "start_url": "./index.html",
+  "name": "XTB-Springtea",
+  "short_name": "XTB-Springtea",
+  "start_url": "./index.html?view=rsi",
   "display": "standalone",
   "background_color": "#131722",
   "theme_color": "#131722",

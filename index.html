@@ -3,43 +3,31 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Crypto market matrix realtime: H4, H12, D1, D2 price and RSI from Binance." />
-  <meta name="theme-color" content="#0b0b0b" />
-  <title>Crypto Matrix</title>
+  <meta name="description" content="XTB-Springtea market matrix realtime: H4, H12, D1, D2 price and RSI from Binance." />
+  <meta name="theme-color" content="#131722" />
+  <title>XTB-Springtea | Market Matrix</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-  <link rel="stylesheet" href="assets/css/styles.css?v=20260707-logo-refresh" />
-  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg?v=20260707-logo-refresh" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
 <body>
   <div class="market-app">
     <header class="market-topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 64 64" focusable="false">
-            <rect class="mark-bg" x="4" y="4" width="56" height="56" rx="14" />
-            <path class="mark-grid" d="M17 19H47M17 32H47M17 45H47M19 17V47M32 17V47M45 17V47" />
-            <path class="mark-candle mark-red" d="M22 19V41M18 25H26V36H18Z" />
-            <path class="mark-candle mark-light" d="M32 16V46M28 22H36V39H28Z" />
-            <path class="mark-candle mark-green" d="M42 18V43M38 24H46V34H38Z" />
-            <path class="mark-wave" d="M14 42C22 29 29 36 34 28C40 18 47 22 51 13" />
-          </svg>
-        </span>
-        <span>CRYPTO MATRIX</span>
+        <span class="coin-dot">B</span>
+        <span>XTB-SPRINGTEA</span>
       </div>
 
       <form id="symbolForm" class="symbol-form">
         <input id="symbolInput" class="symbol-input" value="BTCUSDT" autocomplete="off" />
         <button class="load-btn" type="submit">Load</button>
       </form>
-      <button id="reloadCharts" class="reload-btn" type="button">Reload Chart</button>
+      <button id="reloadCharts" class="reload-btn" type="button">Reload</button>
       <button id="toggleControls" class="reload-btn" type="button">Controls</button>
       <nav class="view-tabs" aria-label="Chart view">
         <button class="view-tab active" type="button" data-view="chart">Chart</button>
-        <button class="view-tab" type="button" data-view="single">Single</button>
-        <button class="view-tab" type="button" data-view="trades">Trades</button>
         <button class="view-tab" type="button" data-view="rsi">RSI Only</button>
-        <button class="view-tab" type="button" data-view="rules">RSI Rules</button>
       </nav>
 
       <div id="symbolTitle" class="symbol-title">Bitcoin / TetherUS</div>
@@ -54,17 +42,47 @@
     </header>
 
     <section id="controlsPanel" class="controls-panel">
-      <div class="controls-strip">
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="baseline" checked /><span class="swatch yellow"></span><span>BL</span><input class="param-input" type="number" data-param="baselineLength" min="1" max="500" step="1" /><small>L</small><input class="param-input" type="number" data-param="baselinePhase" min="-100" max="100" step="1" /><small>P</small></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="slowBaseline" checked /><span class="swatch purple"></span><span>Slow BL</span><input class="param-input" type="number" data-param="slowBaselineLength" min="1" max="800" step="1" /><small>L</small><input class="param-input" type="number" data-param="slowBaselinePhase" min="-100" max="100" step="1" /><small>P</small></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="vwap" checked /><span class="swatch white"></span><span>VWAP W</span></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="rsi" checked /><span class="swatch white"></span><span>RSI</span><input class="param-input" type="number" data-param="rsiLength" min="2" max="100" step="1" /></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="rsiEma" checked /><span class="swatch orange"></span><span>EMA</span><input class="param-input" type="number" data-param="rsiEmaLength" min="1" max="100" step="1" /></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="rsiWma" checked /><span class="swatch red"></span><span>WMA</span><input class="param-input" type="number" data-param="rsiWmaLength" min="1" max="200" step="1" /></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="orders" checked /><span class="swatch magenta"></span><span>Orders</span></label>
-        <label class="control-chip"><input class="layer-toggle" type="checkbox" data-layer="signals" checked /><span class="swatch green"></span><span>Signals</span></label>
-        <button id="resetParams" class="control-reset" type="button">Reset</button>
-      </div>
+      <table class="controls-table">
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Show</th>
+            <th>Color</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Baseline</td>
+            <td><input class="layer-toggle" type="checkbox" data-layer="baseline" checked /></td>
+            <td><span class="swatch yellow"></span></td>
+          </tr>
+          <tr>
+            <td>Slow Baseline</td>
+            <td><input class="layer-toggle" type="checkbox" data-layer="slowBaseline" checked /></td>
+            <td><span class="swatch purple"></span></td>
+          </tr>
+          <tr>
+            <td>VWAP W</td>
+            <td><input class="layer-toggle" type="checkbox" data-layer="vwap" checked /></td>
+            <td><span class="swatch white"></span></td>
+          </tr>
+          <tr>
+            <td>RSI14</td>
+            <td><input class="layer-toggle" type="checkbox" data-layer="rsi" checked /></td>
+            <td><span class="swatch white"></span></td>
+          </tr>
+          <tr>
+            <td>RSI EMA9</td>
+            <td><input class="layer-toggle" type="checkbox" data-layer="rsiEma" checked /></td>
+            <td><span class="swatch orange"></span></td>
+          </tr>
+          <tr>
+            <td>RSI WMA45</td>
+            <td><input class="layer-toggle" type="checkbox" data-layer="rsiWma" checked /></td>
+            <td><span class="swatch red"></span></td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <div class="content-shell">
@@ -73,52 +91,60 @@
           <header class="card-head">
             <div>
               <div class="frame-title">H4</div>
-              <div class="frame-subtitle">Baseline + VWAP W + RSI14</div>
+              <div class="frame-subtitle">Baseline, VWAP W, RSI14</div>
             </div>
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
+              <span>RSI <b data-role="rsi">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
+          <div class="rsi-chart" data-role="rsi-chart"></div>
         </section>
 
         <section class="market-card" data-frame="h12">
           <header class="card-head">
             <div>
               <div class="frame-title">H12</div>
-              <div class="frame-subtitle">Baseline + VWAP W + RSI14</div>
+              <div class="frame-subtitle">Baseline, VWAP W, RSI14</div>
             </div>
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
+              <span>RSI <b data-role="rsi">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
+          <div class="rsi-chart" data-role="rsi-chart"></div>
         </section>
 
         <section class="market-card" data-frame="d1">
           <header class="card-head">
             <div>
               <div class="frame-title">D1</div>
-              <div class="frame-subtitle">Baseline + VWAP W + RSI14</div>
+              <div class="frame-subtitle">Baseline, VWAP W, RSI14</div>
             </div>
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
+              <span>RSI <b data-role="rsi">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
+          <div class="rsi-chart" data-role="rsi-chart"></div>
         </section>
 
         <section class="market-card" data-frame="d2">
           <header class="card-head">
             <div>
               <div class="frame-title">D2</div>
-              <div class="frame-subtitle">D1 x2 + Baseline + VWAP W</div>
+              <div class="frame-subtitle">D1 x2, Baseline, VWAP W</div>
             </div>
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
+              <span>RSI <b data-role="rsi">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
+          <div class="rsi-chart" data-role="rsi-chart"></div>
         </section>
       </main>
 
@@ -175,223 +201,9 @@
           <div class="rsi-only-chart" data-role="rsi-only-chart"></div>
         </section>
       </main>
-
-      <main id="singleView" class="single-view view-panel">
-        <section class="single-shell">
-          <header class="single-head">
-            <div class="single-title">
-              <strong data-role="single-symbol">BTC/USDT</strong>
-              <span data-role="single-price">--</span>
-              <span data-role="single-change">--%</span>
-            </div>
-            <div class="single-strategy wait" data-role="single-strategy">
-              <span>Strategy</span>
-              <b data-role="single-strategy-label">APPROX</b>
-              <em data-role="single-strategy-detail">Draft JS orders, not v17 parity</em>
-            </div>
-            <nav id="singleTfButtons" class="single-tf-tabs" aria-label="Single timeframe"></nav>
-          </header>
-          <div class="single-price-wrap">
-            <div class="single-price-chart" data-role="single-price-chart"></div>
-            <div class="single-parity-panel" data-role="single-parity-panel" aria-label="V17 status panel"></div>
-          </div>
-          <div class="single-rsi-resize" data-role="single-rsi-resize" title="Kéo để đổi chiều cao RSI"></div>
-          <div class="single-rsi-chart" data-role="single-rsi-chart"></div>
-        </section>
-      </main>
-
-      <main id="tradesView" class="trades-view view-panel">
-        <section class="trades-shell">
-          <header class="trades-head">
-            <div>
-              <strong>Trade History</strong>
-              <span>Draft Single entries and exits saved on this browser.</span>
-            </div>
-            <button id="clearTradeHistory" class="trade-clear-btn" type="button">Clear</button>
-          </header>
-
-          <section class="trade-summary" aria-label="Trade history summary">
-            <div><span>Total</span><b data-role="trade-total">0</b></div>
-            <div><span>Entries</span><b data-role="trade-entries">0</b></div>
-            <div><span>Exits</span><b data-role="trade-exits">0</b></div>
-            <div><span>Latest</span><b data-role="trade-latest">--</b></div>
-          </section>
-
-          <div class="trade-table-wrap">
-            <table class="trade-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Time</th>
-                  <th>Symbol</th>
-                  <th>TF</th>
-                  <th>Side</th>
-                  <th>Type</th>
-                  <th>Tag</th>
-                  <th>Price</th>
-                  <th>Qty</th>
-                  <th>Detail</th>
-                </tr>
-              </thead>
-              <tbody id="tradeHistoryRows"></tbody>
-            </table>
-          </div>
-        </section>
-      </main>
-
-      <main id="rulesView" class="rules-view view-panel">
-        <section class="rules-shell" data-rule-mode="two">
-          <header class="rules-head">
-            <div>
-              <strong>Bảng RSI đa khung</strong>
-              <span>Khung bố: H12/D1/2D. Khung con: H4/H12/D1.</span>
-            </div>
-          </header>
-
-          <nav class="rule-mode-tabs" aria-label="RSI rule mode">
-            <button class="rule-mode-tab active" type="button" data-rule-mode="two">2 khung</button>
-            <button class="rule-mode-tab" type="button" data-rule-mode="three">3 khung</button>
-          </nav>
-
-          <section class="manual-rules rule-mode-three" id="manualRulesPanel">
-            <header class="manual-rules-head">
-              <div>
-                <strong>3 khung tự config</strong>
-                <span>Chọn trạng thái từng khung để app gom thành tín hiệu dễ đánh.</span>
-              </div>
-              <button id="resetManualRules" type="button">Reset</button>
-            </header>
-            <div class="manual-rules-grid">
-              <label class="manual-rule-card">
-                <span>Khung lớn</span>
-                <select data-role="manual-frame" data-index="0"></select>
-                <select data-role="manual-state" data-index="0"></select>
-              </label>
-              <label class="manual-rule-card">
-                <span>Khung giữa</span>
-                <select data-role="manual-frame" data-index="1"></select>
-                <select data-role="manual-state" data-index="1"></select>
-              </label>
-              <label class="manual-rule-card">
-                <span>Khung nhỏ</span>
-                <select data-role="manual-frame" data-index="2"></select>
-                <select data-role="manual-state" data-index="2"></select>
-              </label>
-            </div>
-            <div class="manual-result" id="manualResult">
-              <div class="manual-result-signal">
-                <span>3-frame strategy</span>
-                <b data-role="manual-strategy-label">WAIT</b>
-              </div>
-              <div class="manual-result-detail">
-                <strong data-role="manual-strategy-title">Chờ config</strong>
-                <span data-role="manual-strategy-reason">Chọn đủ 3 trạng thái để app so khớp rule.</span>
-              </div>
-              <div class="manual-result-pairs">
-                <span data-role="manual-top-pair">Lớn → Giữa: --</span>
-                <span data-role="manual-trigger-pair">Giữa → Nhỏ: --</span>
-              </div>
-            </div>
-          </section>
-
-          <section class="three-case-section rule-mode-three">
-            <header class="three-case-head">
-              <strong>Bảng trường hợp 3 khung</strong>
-              <span>216 case tự ghép từ 6 trạng thái RSI.</span>
-            </header>
-            <div class="three-case-table-wrap">
-              <table class="three-case-table">
-                <thead>
-                  <tr>
-                    <th>STT</th>
-                    <th>Khung lớn</th>
-                    <th>Khung giữa</th>
-                    <th>Khung nhỏ</th>
-                    <th>Lớn → Giữa</th>
-                    <th>Giữa → Nhỏ</th>
-                    <th>Strategy</th>
-                    <th>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody id="threeFrameRows"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <section class="two-manual-rules rule-mode-two" id="twoManualRulesPanel">
-            <header class="manual-rules-head">
-              <div>
-                <strong>2 khung tu config</strong>
-                <span>Chon khung bo/con va trang thai RSI de tinh rule.</span>
-              </div>
-              <button id="resetTwoManualRules" type="button">Reset</button>
-            </header>
-            <div class="manual-rules-grid two-grid">
-              <label class="manual-rule-card">
-                <span>Khung bo</span>
-                <select data-role="two-frame" data-index="0"></select>
-                <select data-role="two-state" data-index="0"></select>
-              </label>
-              <label class="manual-rule-card">
-                <span>Khung con</span>
-                <select data-role="two-frame" data-index="1"></select>
-                <select data-role="two-state" data-index="1"></select>
-              </label>
-            </div>
-          </section>
-
-          <section class="current-rule rule-mode-two" id="currentRuleBox">
-            <div class="current-rule-item">
-              <span data-role="two-parent-label">Khung bo</span>
-              <b data-role="parent-state">Đang tải</b>
-            </div>
-            <div class="current-rule-item">
-              <span data-role="two-child-label">Khung con</span>
-              <b data-role="child-state">Đang tải</b>
-            </div>
-            <div class="current-rule-item">
-              <span>Trường hợp</span>
-              <b data-role="rule-number">--</b>
-            </div>
-            <div class="current-rule-action">
-              <span data-role="rule-score">Điểm --</span>
-              <b data-role="rule-action">Chờ đủ dữ liệu RSI H12 và H4.</b>
-            </div>
-          </section>
-
-          <section class="strategy-panel rule-mode-two" id="strategyPanel">
-            <div class="strategy-signal">
-              <span>Strategy</span>
-              <b data-role="strategy-label">WAIT</b>
-            </div>
-            <div class="strategy-detail">
-              <strong data-role="strategy-title">Chờ đủ dữ liệu</strong>
-              <span data-role="strategy-reason">App sẽ dùng H12 làm khung bố và H4 làm khung con để lọc tín hiệu.</span>
-            </div>
-            <div class="strategy-checks" data-role="strategy-checks"></div>
-          </section>
-
-          <div class="rsi-state-grid rule-mode-two" id="rsiStateGrid"></div>
-
-          <div class="rules-table-wrap rule-mode-two">
-            <table class="rules-table">
-              <thead>
-                <tr>
-                  <th>STT</th>
-                  <th>Trạng thái bố</th>
-                  <th>Trạng thái con</th>
-                  <th>Điểm đồng thuận</th>
-                  <th>Hành động</th>
-                </tr>
-              </thead>
-              <tbody id="rsiRuleRows"></tbody>
-            </table>
-          </div>
-        </section>
-      </main>
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260710-v17-port-wip29"></script>
+  <script src="assets/js/app.js?v=20260715-tradingview-clean"></script>
 </body>
 </html>

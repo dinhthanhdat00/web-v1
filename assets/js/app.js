@@ -16,6 +16,12 @@ const TV_GRID = "rgba(42,46,57,0.65)";
 const TV_TEXT = "#787b86";
 const TV_GREEN = "#26a69a";
 const TV_RED = "#ef5350";
+const SINGLE_BG = "#0f0f10";
+const SINGLE_PANEL_BG = "#101010";
+const SINGLE_GRID = "rgba(255,255,255,0.055)";
+const SINGLE_TEXT = "#b8b8b8";
+const SINGLE_UP = "#58d15f";
+const SINGLE_DOWN = "#d9d9d9";
 const SINGLE_RSI_HEIGHT_KEY = "singleChartRsiHeight";
 const SINGLE_RSI_DEFAULT_HEIGHT = 170;
 const SINGLE_RSI_MIN_HEIGHT = 90;
@@ -121,6 +127,24 @@ function chartOptions(background = TV_BG) {
       horzLine: { color: "rgba(120,123,134,0.75)", style: 3, width: 1 }
     }
   };
+}
+
+function singleChartOptions(background = SINGLE_BG) {
+  const options = chartOptions(background);
+  options.layout.textColor = SINGLE_TEXT;
+  options.grid.vertLines.color = SINGLE_GRID;
+  options.grid.horzLines.color = SINGLE_GRID;
+  options.rightPriceScale.borderColor = "rgba(255,255,255,0.12)";
+  options.rightPriceScale.scaleMargins = {
+    top: 0.08,
+    bottom: 0.18
+  };
+  options.timeScale.borderColor = "rgba(255,255,255,0.12)";
+  options.timeScale.rightOffset = 52;
+  options.timeScale.barSpacing = 6;
+  options.crosshair.vertLine.color = "rgba(210,210,210,0.45)";
+  options.crosshair.horzLine.color = "rgba(210,210,210,0.45)";
+  return options;
 }
 
 function fixedRsiAutoscaleInfo() {
@@ -750,58 +774,78 @@ class SingleChartPanel {
     this.rsiHeight = this.loadRsiHeight();
     this.dragState = null;
 
-    this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions(TV_BG));
-    this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions(TV_BG_DARK));
+    this.priceChart = LightweightCharts.createChart(this.priceNode, singleChartOptions(SINGLE_BG));
+    this.rsiChart = LightweightCharts.createChart(this.rsiNode, singleChartOptions("rgba(0,0,0,0)"));
     applyRsiChartScale(this.rsiChart);
 
     this.candleSeries = this.priceChart.addCandlestickSeries({
-      upColor: TV_GREEN,
-      downColor: TV_RED,
-      borderUpColor: TV_GREEN,
-      borderDownColor: TV_RED,
-      wickUpColor: TV_GREEN,
-      wickDownColor: TV_RED,
+      upColor: SINGLE_UP,
+      downColor: SINGLE_DOWN,
+      borderUpColor: SINGLE_UP,
+      borderDownColor: SINGLE_DOWN,
+      wickUpColor: SINGLE_UP,
+      wickDownColor: SINGLE_DOWN,
+      lastValueVisible: true,
+      priceLineVisible: true,
+      priceLineColor: "rgba(220,220,220,0.65)",
+      priceLineStyle: 2
+    });
+    this.volumeSeries = this.priceChart.addHistogramSeries({
+      color: "rgba(120,123,134,0.18)",
+      priceFormat: {
+        type: "volume"
+      },
+      priceScaleId: "",
       lastValueVisible: false,
       priceLineVisible: false
     });
+    this.priceChart.priceScale("").applyOptions({
+      scaleMargins: {
+        top: 0.82,
+        bottom: 0
+      }
+    });
     this.baselineSeries = this.priceChart.addLineSeries({
-      color: "#fdd835",
-      lineWidth: 2,
+      color: "rgba(255,193,7,0.86)",
+      lineWidth: 1,
       title: "",
       lastValueVisible: false,
       priceLineVisible: false
     });
     this.slowBaselineSeries = this.priceChart.addLineSeries({
-      color: "#ab47bc",
-      lineWidth: 2,
+      color: "rgba(255,64,129,0.78)",
+      lineWidth: 1,
       title: "",
       lastValueVisible: false,
       priceLineVisible: false
     });
     this.vwapSeries = this.priceChart.addLineSeries({
-      color: "#f0f3fa",
-      lineWidth: 2,
+      color: "rgba(240,243,250,0.78)",
+      lineWidth: 1,
       title: "",
       lastValueVisible: false,
       priceLineVisible: false
     });
     this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: "#f0f3fa",
-      lineWidth: 2
+      color: "#ffffff",
+      lineWidth: 2,
+      lastValueVisible: true
     }));
     this.rsiEmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: "#ffb74d",
-      lineWidth: 2
+      color: "#ffb000",
+      lineWidth: 2,
+      lastValueVisible: true
     }));
     this.rsiWmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({
-      color: "#ef5350",
-      lineWidth: 2
+      color: "#ff3347",
+      lineWidth: 2,
+      lastValueVisible: true
     }));
-    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.65)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,43,214,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(209,212,220,0.24)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(139,0,0,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(38,166,154,0.65)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.42)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.72)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(210,210,210,0.22)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.72)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.42)", lineWidth: 1, lineStyle: 2 }));
 
     this.priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (range) this.rsiChart.timeScale().setVisibleLogicalRange(range);
@@ -853,8 +897,8 @@ class SingleChartPanel {
 
   maxRsiHeight() {
     if (!this.cardNode.clientHeight) return Math.max(this.rsiHeight, SINGLE_RSI_MIN_HEIGHT);
-    const headerHeight = this.el.querySelector(".single-head")?.offsetHeight || 38;
-    const handleHeight = this.resizerNode?.offsetHeight || 8;
+    const headerHeight = this.el.querySelector(".single-head")?.offsetHeight || 32;
+    const handleHeight = this.resizerNode?.offsetHeight || 7;
     const availableHeight = Math.max(this.cardNode.clientHeight - headerHeight - handleHeight, SINGLE_RSI_MIN_HEIGHT);
     return Math.max(SINGLE_RSI_MIN_HEIGHT, Math.floor(availableHeight * SINGLE_RSI_MAX_RATIO));
   }
@@ -865,9 +909,9 @@ class SingleChartPanel {
 
   applyRsiHeight() {
     if (!this.cardNode) return;
-    const headerHeight = this.el.querySelector(".single-head")?.offsetHeight || 38;
+    const headerHeight = this.el.querySelector(".single-head")?.offsetHeight || 32;
     if (this.cardNode.clientHeight) this.rsiHeight = this.clampRsiHeight(this.rsiHeight);
-    this.cardNode.style.gridTemplateRows = `${headerHeight}px minmax(140px, 1fr) 8px ${this.rsiHeight}px`;
+    this.cardNode.style.gridTemplateRows = `${headerHeight}px minmax(140px, 1fr) 7px ${this.rsiHeight}px`;
   }
 
   bindRsiResizer() {
@@ -914,7 +958,7 @@ class SingleChartPanel {
     this.candles = aggregateCandles(this.rawCandles, this.config.aggregate);
   }
 
-  focusLatest(bars = 90) {
+  focusLatest(bars = 220) {
     const total = this.candles.length;
     if (!total) return;
 
@@ -963,7 +1007,7 @@ class SingleChartPanel {
 
     this.candleSeries.setData(candles.map((c) => {
       const signalColor = barColors.get(c.time);
-      const bodyColor = signalColor || (c.close >= c.open ? TV_GREEN : TV_RED);
+      const bodyColor = signalColor || (c.close >= c.open ? SINGLE_UP : SINGLE_DOWN);
       return {
         time: c.time,
         open: c.open,
@@ -975,6 +1019,11 @@ class SingleChartPanel {
         wickColor: bodyColor
       };
     }));
+    this.volumeSeries.setData(candles.map((c) => ({
+      time: c.time,
+      value: c.volume,
+      color: c.close >= c.open ? "rgba(88,209,95,0.16)" : "rgba(217,217,217,0.12)"
+    })));
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
@@ -982,10 +1031,18 @@ class SingleChartPanel {
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
-    this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
+    this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers([]);
+    this.rsiSeries.setMarkers(rsiData
+      .filter((point) => point.value <= RSI_LOW_LEVEL || point.value >= RSI_HIGH_LEVEL)
+      .map((point) => ({
+        time: point.time,
+        position: point.value >= RSI_HIGH_LEVEL ? "aboveBar" : "belowBar",
+        color: point.value >= RSI_HIGH_LEVEL ? "rgba(239,83,80,0.92)" : "rgba(76,175,80,0.92)",
+        shape: point.value >= RSI_HIGH_LEVEL ? "arrowDown" : "arrowUp",
+        text: point.value >= RSI_HIGH_LEVEL ? "80" : "20"
+      })));
     this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
     this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
     this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));

@@ -266,12 +266,9 @@ function emaFromValues(values, length) {
   const k = 2 / (length + 1);
   let previous = null;
 
-  values.forEach((point, index) => {
-    if (index < length - 1) return;
-
+  values.forEach((point) => {
     if (previous === null) {
-      const slice = values.slice(index - length + 1, index + 1);
-      previous = slice.reduce((sum, item) => sum + item.value, 0) / length;
+      previous = point.value;
     } else {
       previous = point.value * k + previous * (1 - k);
     }
@@ -657,7 +654,7 @@ function crossSignals(candles, fastBaseline, slowBaseline) {
 
 function rsi(candles, length = 14) {
   const result = [];
-  if (candles.length <= length + 1) return result;
+  if (candles.length <= length) return result;
 
   let gains = 0;
   let losses = 0;
@@ -671,6 +668,12 @@ function rsi(candles, length = 14) {
   let avgGain = gains / length;
   let avgLoss = losses / length;
 
+  const firstRs = avgLoss === 0 ? null : avgGain / avgLoss;
+  result.push({
+    time: candles[length].time,
+    value: avgLoss === 0 ? 100 : avgGain === 0 ? 0 : 100 - (100 / (1 + firstRs))
+  });
+
   for (let i = length + 1; i < candles.length; i += 1) {
     const diff = candles[i].close - candles[i - 1].close;
     const gain = diff > 0 ? diff : 0;
@@ -679,8 +682,11 @@ function rsi(candles, length = 14) {
     avgGain = (avgGain * (length - 1) + gain) / length;
     avgLoss = (avgLoss * (length - 1) + loss) / length;
 
-    const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-    result.push({ time: candles[i].time, value: 100 - (100 / (1 + rs)) });
+    const rs = avgLoss === 0 ? null : avgGain / avgLoss;
+    result.push({
+      time: candles[i].time,
+      value: avgLoss === 0 ? 100 : avgGain === 0 ? 0 : 100 - (100 / (1 + rs))
+    });
   }
 
   return result;
@@ -1364,8 +1370,11 @@ class SingleChartPanel {
 
   lookupD2Bias(d2State, time) {
     let activeBias = 0;
-    for (const state of d2State) {
-      if (state.time > time) break;
+    for (let index = 0; index < d2State.length; index += 1) {
+      const state = d2State[index];
+      const nextState = d2State[index + 1];
+      const effectiveTime = nextState?.time ?? state.time + (2 * 24 * 60 * 60);
+      if (effectiveTime > time) break;
       activeBias = state.bias;
     }
     return activeBias;

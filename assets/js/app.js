@@ -786,9 +786,7 @@ class SingleChartPanel {
       wickUpColor: SINGLE_UP,
       wickDownColor: SINGLE_DOWN,
       lastValueVisible: true,
-      priceLineVisible: true,
-      priceLineColor: "rgba(220,220,220,0.65)",
-      priceLineStyle: 2
+      priceLineVisible: false
     });
     this.volumeSeries = this.priceChart.addHistogramSeries({
       color: "rgba(120,123,134,0.18)",
@@ -823,6 +821,15 @@ class SingleChartPanel {
       color: "rgba(240,243,250,0.78)",
       lineWidth: 1,
       title: "",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.rsiRegimeSeries = this.rsiChart.addHistogramSeries({
+      color: "rgba(0,0,0,0)",
+      base: 0,
+      priceFormat: {
+        type: "volume"
+      },
       lastValueVisible: false,
       priceLineVisible: false
     });
@@ -1031,6 +1038,20 @@ class SingleChartPanel {
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    const rsiEmaByTime = valueMap(rsiEmaData);
+    const rsiWmaByTime = valueMap(rsiWmaData);
+    this.rsiRegimeSeries.setData(candles.map((c) => {
+      const emaValue = rsiEmaByTime.get(c.time);
+      const wmaValue = rsiWmaByTime.get(c.time);
+      if (emaValue === undefined || wmaValue === undefined) {
+        return { time: c.time, value: 100, color: "rgba(0,0,0,0)" };
+      }
+      return {
+        time: c.time,
+        value: 100,
+        color: emaValue >= wmaValue ? "rgba(46,125,50,0.16)" : "rgba(183,28,28,0.17)"
+      };
+    }));
     this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);

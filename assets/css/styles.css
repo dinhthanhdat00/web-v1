@@ -506,17 +506,7 @@ body.single-rsi-resizing {
 }
 
 .single-rsi-chart {
-  background:
-    linear-gradient(
-      to bottom,
-      rgba(183, 28, 28, 0.17) 0%,
-      rgba(183, 28, 28, 0.17) 20%,
-      transparent 20%,
-      transparent 80%,
-      rgba(27, 94, 32, 0.18) 80%,
-      rgba(27, 94, 32, 0.18) 100%
-    ),
-    #101010;
+  background: #101010;
 }
 
 @media (max-width: 980px) {

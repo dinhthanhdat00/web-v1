@@ -362,6 +362,111 @@ body {
   background: var(--panel-2);
 }
 
+.single-view {
+  height: 100%;
+  min-height: 0;
+  padding: 1px;
+  background: var(--border);
+}
+
+.single-card {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 38px minmax(240px, 1fr) minmax(120px, 0.34fr);
+  background: var(--panel);
+}
+
+.single-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border);
+  background: #131722;
+}
+
+.single-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.single-title strong {
+  color: var(--white);
+  font-size: 14px;
+}
+
+.single-title span {
+  white-space: nowrap;
+}
+
+.single-title .rsi-low {
+  color: #8b0000;
+  text-shadow: 0 0 10px rgba(139, 0, 0, 0.75);
+}
+
+.single-title .rsi-high {
+  color: #ff2bd6;
+  text-shadow: 0 0 10px rgba(255, 43, 214, 0.75);
+}
+
+.single-timeframes {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #0b0f18;
+}
+
+.single-timeframe {
+  height: 26px;
+  min-width: 36px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.single-timeframe:hover {
+  border-color: var(--blue);
+  color: var(--white);
+  background: #0f1420;
+}
+
+.single-timeframe.active {
+  color: var(--white);
+  border-color: rgba(41, 98, 255, 0.35);
+  background: rgba(41, 98, 255, 0.18);
+}
+
+.single-price-chart,
+.single-rsi-chart {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.single-rsi-chart {
+  border-top: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
 @media (max-width: 980px) {
   body {
     overflow: auto;
@@ -390,6 +495,26 @@ body {
 
   .market-card {
     height: 520px;
+  }
+
+  .single-view {
+    height: calc(100dvh - 94px);
+  }
+
+  .single-card {
+    height: 100%;
+    grid-template-rows: auto minmax(260px, 1fr) minmax(140px, 0.42fr);
+  }
+
+  .single-head {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .single-title,
+  .single-timeframes {
+    overflow-x: auto;
   }
 
   body.rsi-view-active {

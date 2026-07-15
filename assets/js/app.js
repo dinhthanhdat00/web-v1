@@ -24,9 +24,20 @@ const FRAMES = [
   { key: "d2", label: "2D", apiTf: "1d", wsTf: "1d", aggregate: 2, limit: 720 }
 ];
 
+const SINGLE_FRAMES = [
+  { key: "h1", label: "H1", apiTf: "1h", wsTf: "1h", aggregate: 1, limit: 500 },
+  { key: "h4", label: "H4", apiTf: "4h", wsTf: "4h", aggregate: 1, limit: 500 },
+  { key: "h12", label: "H12", apiTf: "12h", wsTf: "12h", aggregate: 1, limit: 500 },
+  { key: "d1", label: "D1", apiTf: "1d", wsTf: "1d", aggregate: 1, limit: 500 },
+  { key: "d2", label: "D2", apiTf: "1d", wsTf: "1d", aggregate: 2, limit: 900 },
+  { key: "d3", label: "D3", apiTf: "1d", wsTf: "1d", aggregate: 3, limit: 900 },
+  { key: "w", label: "W", apiTf: "1w", wsTf: "1w", aggregate: 1, limit: 500 }
+];
+
 let currentSymbol = "BTCUSDT";
 let sessionId = 0;
 let tickerWs = null;
+let singlePanel = null;
 const panels = new Map();
 const rsiOnlyPanels = new Map();
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -715,6 +726,250 @@ class RsiOnlyPanel {
   }
 }
 
+class SingleChartPanel {
+  constructor(configs) {
+    this.configs = configs;
+    this.config = configs.find((item) => item.key === "h4") || configs[0];
+    this.rawCandles = [];
+    this.candles = [];
+    this.ws = null;
+    this.el = $("singleView");
+    this.symbolEl = this.el.querySelector('[data-role="single-symbol"]');
+    this.frameEl = this.el.querySelector('[data-role="single-frame"]');
+    this.closeEl = this.el.querySelector('[data-role="single-close"]');
+    this.rsiEl = this.el.querySelector('[data-role="single-rsi"]');
+    this.priceNode = this.el.querySelector('[data-role="single-price-chart"]');
+    this.rsiNode = this.el.querySelector('[data-role="single-rsi-chart"]');
+    this.buttonsNode = $("singleTimeframes");
+
+    this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions(TV_BG));
+    this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions(TV_BG_DARK));
+    applyRsiChartScale(this.rsiChart);
+
+    this.candleSeries = this.priceChart.addCandlestickSeries({
+      upColor: TV_GREEN,
+      downColor: TV_RED,
+      borderUpColor: TV_GREEN,
+      borderDownColor: TV_RED,
+      wickUpColor: TV_GREEN,
+      wickDownColor: TV_RED,
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.baselineSeries = this.priceChart.addLineSeries({
+      color: "#fdd835",
+      lineWidth: 2,
+      title: "",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.slowBaselineSeries = this.priceChart.addLineSeries({
+      color: "#ab47bc",
+      lineWidth: 2,
+      title: "",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.vwapSeries = this.priceChart.addLineSeries({
+      color: "#f0f3fa",
+      lineWidth: 2,
+      title: "",
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
+    this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({
+      color: "#f0f3fa",
+      lineWidth: 2
+    }));
+    this.rsiEmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({
+      color: "#ffb74d",
+      lineWidth: 2
+    }));
+    this.rsiWmaSeries = this.rsiChart.addLineSeries(rsiLineOptions({
+      color: "#ef5350",
+      lineWidth: 2
+    }));
+    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.65)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,43,214,0.8)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(209,212,220,0.24)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(139,0,0,0.8)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(38,166,154,0.65)", lineWidth: 1, lineStyle: 2 }));
+
+    this.priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+      if (range) this.rsiChart.timeScale().setVisibleLogicalRange(range);
+    });
+
+    this.renderButtons();
+  }
+
+  renderButtons() {
+    this.buttonsNode.innerHTML = "";
+    this.configs.forEach((config) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "single-timeframe";
+      button.dataset.tf = config.key;
+      button.textContent = config.label;
+      button.addEventListener("click", () => this.setFrame(config.key, true));
+      this.buttonsNode.appendChild(button);
+    });
+    this.syncHeader();
+  }
+
+  syncHeader() {
+    this.symbolEl.textContent = currentSymbol;
+    this.frameEl.textContent = this.config.label;
+    this.buttonsNode.querySelectorAll(".single-timeframe").forEach((button) => {
+      button.classList.toggle("active", button.dataset.tf === this.config.key);
+    });
+  }
+
+  resize() {
+    this.priceChart.applyOptions({
+      width: this.priceNode.clientWidth,
+      height: this.priceNode.clientHeight
+    });
+    this.rsiChart.applyOptions({
+      width: this.rsiNode.clientWidth,
+      height: this.rsiNode.clientHeight
+    });
+  }
+
+  klineUrl() {
+    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
+  }
+
+  refreshCandles() {
+    this.candles = aggregateCandles(this.rawCandles, this.config.aggregate);
+  }
+
+  focusLatest(bars = 90) {
+    const total = this.candles.length;
+    if (!total) return;
+
+    const from = Math.max(total - bars, 0);
+    const to = total + 1;
+    this.priceChart.timeScale().setVisibleLogicalRange({ from, to });
+    this.rsiChart.timeScale().setVisibleLogicalRange({ from, to });
+  }
+
+  async setFrame(key, reload = false) {
+    const nextConfig = this.configs.find((item) => item.key === key);
+    if (!nextConfig || nextConfig.key === this.config.key) return;
+
+    this.config = nextConfig;
+    this.syncHeader();
+    localStorage.setItem("singleChartTimeframe", key);
+    if (reload) await this.load(sessionId, true);
+  }
+
+  async load(session, fit = true) {
+    closeSocket(this.ws);
+    this.syncHeader();
+    this.closeEl.textContent = "--";
+    this.rsiEl.textContent = "RSI --";
+
+    const response = await fetch(this.klineUrl());
+    if (!response.ok) throw new Error(`${this.config.label} single HTTP ${response.status}`);
+
+    const raw = await response.json();
+    if (session !== sessionId) return;
+
+    this.rawCandles = raw.map(toChartCandle);
+    this.refreshCandles();
+    this.draw(fit);
+    this.startWebSocket(session);
+  }
+
+  draw(fit = false) {
+    const candles = this.candles;
+    if (!candles.length) return;
+
+    const baseline = jmaFromClose(candles, 70, 2, 5);
+    const slowBaseline = jmaFromClose(candles, 150, 2, 0);
+    const vwapData = anchoredVwap(candles, "W");
+    const barColors = crossSignals(candles, baseline, slowBaseline);
+
+    this.candleSeries.setData(candles.map((c) => {
+      const signalColor = barColors.get(c.time);
+      const bodyColor = signalColor || (c.close >= c.open ? TV_GREEN : TV_RED);
+      return {
+        time: c.time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        color: bodyColor,
+        borderColor: bodyColor,
+        wickColor: bodyColor
+      };
+    }));
+    this.baselineSeries.setData(layerState.baseline ? baseline : []);
+    this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
+    this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+
+    const rsiData = rsi(candles, RSI_LENGTH);
+    const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
+    const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
+    this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
+    this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
+    this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
+    this.rsiSeries.setMarkers([]);
+    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
+    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
+    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
+    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
+    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
+
+    const last = candles[candles.length - 1];
+    const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
+    this.closeEl.textContent = `Close ${fmt.format(last.close)}`;
+    this.rsiEl.textContent = lastRsi === null ? "RSI --" : `RSI ${fmt.format(lastRsi)}`;
+    this.rsiEl.classList.toggle("rsi-low", lastRsi !== null && lastRsi <= RSI_LOW_LEVEL);
+    this.rsiEl.classList.toggle("rsi-high", lastRsi !== null && lastRsi >= RSI_HIGH_LEVEL);
+
+    if (fit) this.focusLatest();
+  }
+
+  startWebSocket(session) {
+    const stream = `${currentSymbol.toLowerCase()}@kline_${this.config.wsTf}`;
+    this.ws = new WebSocket(`${WS_BASE}/${stream}`);
+
+    this.ws.onmessage = (event) => {
+      if (session !== sessionId) return;
+
+      const msg = JSON.parse(event.data);
+      const k = msg.k;
+      const candle = {
+        time: Math.floor(k.t / 1000),
+        open: Number(k.o),
+        high: Number(k.h),
+        low: Number(k.l),
+        close: Number(k.c),
+        volume: Number(k.v)
+      };
+      const last = this.rawCandles[this.rawCandles.length - 1];
+
+      if (last && last.time === candle.time) {
+        this.rawCandles[this.rawCandles.length - 1] = candle;
+      } else {
+        this.rawCandles.push(candle);
+        while (this.rawCandles.length > this.config.limit) this.rawCandles.shift();
+      }
+
+      this.refreshCandles();
+      this.draw(false);
+    };
+
+    this.ws.onclose = () => {
+      if (session !== sessionId) return;
+      setTimeout(() => {
+        if (session === sessionId) this.startWebSocket(session);
+      }, 1500);
+    };
+  }
+}
+
 function normalizeSymbol(value) {
   const cleaned = value.trim().toUpperCase().replace("/", "");
   if (!cleaned) return currentSymbol;
@@ -751,13 +1006,17 @@ async function loadMarketMatrix() {
   const session = ++sessionId;
   closeSocket(tickerWs);
   panels.forEach((panel) => closeSocket(panel.ws));
+  closeSocket(singlePanel?.ws);
 
   updateSymbolTitle();
   updateOhlc(null);
   setLiveStatus(false, "Loading matrix...");
 
   try {
-    await Promise.all(Array.from(panels.values()).map((panel) => panel.load(session)));
+    await Promise.all([
+      ...Array.from(panels.values()).map((panel) => panel.load(session)),
+      singlePanel?.load(session)
+    ]);
     if (session !== sessionId) return;
     startTickerWebSocket(session);
     setLiveStatus(true, `Live ${currentSymbol}`);
@@ -787,6 +1046,9 @@ function normalizeTfKey(value) {
   if (["12h", "h12"].includes(normalized)) return "h12";
   if (["1d", "d1", "daily"].includes(normalized)) return "d1";
   if (["2d", "d2"].includes(normalized)) return "d2";
+  if (["1h", "h1"].includes(normalized)) return "h1";
+  if (["3d", "d3"].includes(normalized)) return "d3";
+  if (["1w", "w", "weekly"].includes(normalized)) return "w";
   return "";
 }
 
@@ -810,14 +1072,16 @@ function applyInitialTimeframeFocus() {
 function resizeAll() {
   panels.forEach((panel) => panel.resize());
   rsiOnlyPanels.forEach((panel) => panel.resize());
+  singlePanel?.resize();
 }
 
 function redrawAll() {
   panels.forEach((panel) => panel.draw(false));
+  singlePanel?.draw(false);
 }
 
 function setActiveView(view, persist = true) {
-  const nextView = view === "rsi" ? "rsi" : "chart";
+  const nextView = ["chart", "single", "rsi"].includes(view) ? view : "chart";
   document.body.classList.toggle("rsi-view-active", nextView === "rsi");
   document.querySelectorAll(".view-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === nextView));
   document.querySelectorAll(".view-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${nextView}View`));
@@ -846,9 +1110,12 @@ function boot() {
     rsiOnlyPanels.set(config.key, new RsiOnlyPanel(config));
     panels.set(config.key, new MarketPanel(config));
   });
+  singlePanel = new SingleChartPanel(SINGLE_FRAMES);
+  const initialTf = normalizeTfKey(queryParams().get("tf")) || localStorage.getItem("singleChartTimeframe");
+  if (initialTf) singlePanel.setFrame(initialTf, false);
 
   const resizeObserver = new ResizeObserver(resizeAll);
-  document.querySelectorAll(".price-chart, .rsi-chart, .rsi-only-chart").forEach((node) => resizeObserver.observe(node));
+  document.querySelectorAll(".price-chart, .rsi-chart, .rsi-only-chart, .single-price-chart, .single-rsi-chart").forEach((node) => resizeObserver.observe(node));
   window.addEventListener("resize", resizeAll);
 
   $("symbolForm").addEventListener("submit", (event) => {

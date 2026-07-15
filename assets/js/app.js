@@ -78,6 +78,7 @@ let currentSymbol = "BTCUSDT";
 let sessionId = 0;
 let tickerWs = null;
 let singlePanel = null;
+let sharedD2State = [];
 const panels = new Map();
 const rsiOnlyPanels = new Map();
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -217,6 +218,18 @@ function toChartCandle(kline) {
     close: Number(kline[4]),
     volume: Number(kline[5])
   };
+}
+
+function klineUrlFor(interval, limit = 500) {
+  return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${interval}&limit=${limit}`;
+}
+
+async function loadSharedD2State() {
+  const response = await fetch(klineUrlFor("1d", 1000));
+  if (!response.ok) throw new Error(`D2 background HTTP ${response.status}`);
+
+  const raw = await response.json();
+  return pineRsiFrameState(aggregateDailyCandles(raw.map(toChartCandle), 2));
 }
 
 function aggregateCandles(source, groupSize) {
@@ -552,6 +565,29 @@ function rsiColorData(rsiData) {
   });
 }
 
+function lookupConfirmedD2Bias(d2State, time) {
+  let activeBias = 0;
+  for (let index = 0; index < d2State.length; index += 1) {
+    const state = d2State[index];
+    const nextState = d2State[index + 1];
+    const effectiveTime = nextState?.time ?? state.time + (2 * 24 * 60 * 60);
+    if (effectiveTime > time) break;
+    activeBias = state.bias;
+  }
+  return activeBias;
+}
+
+function rsiRegimeData(candles, d2State = sharedD2State) {
+  return candles.map((candle) => {
+    const d2Bias = lookupConfirmedD2Bias(d2State, candle.time);
+    return {
+      time: candle.time,
+      value: 100,
+      color: d2Bias === 1 ? "rgba(46,125,50,0.16)" : d2Bias === -1 ? "rgba(183,28,28,0.17)" : "rgba(0,0,0,0)"
+    };
+  });
+}
+
 function jmaFromClose(candles, length, power, phase) {
   const result = [];
   const phaseRatio = phase < -100 ? 0.5 : phase > 100 ? 2.5 : phase / 100 + 1.5;
@@ -732,7 +768,6 @@ class MarketPanel {
     this.config = config;
     this.el = document.querySelector(`[data-frame="${config.key}"]`);
     this.rawCandles = [];
-    this.rawD1Candles = [];
     this.candles = [];
     this.ws = null;
     this.closeEl = this.el.querySelector('[data-role="close"]');
@@ -818,11 +853,7 @@ class MarketPanel {
   }
 
   klineUrl() {
-    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
-  }
-
-  d1KlineUrl() {
-    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=1d&limit=1000`;
+    return klineUrlFor(this.config.apiTf, this.config.limit);
   }
 
   refreshCandles() {
@@ -972,31 +1003,35 @@ class RsiOnlyPanel {
     this.chart = LightweightCharts.createChart(this.chartNode, chartOptions(TV_BG_DARK));
     applyRsiChartScale(this.chart);
 
+    this.rsiRegimeSeries = this.chart.addHistogramSeries({
+      color: "rgba(0,0,0,0)",
+      base: 0,
+      priceFormat: {
+        type: "volume"
+      },
+      lastValueVisible: false,
+      priceLineVisible: false
+    });
     this.rsiSeries = this.chart.addLineSeries(rsiLineOptions({
-      color: "#f0f3fa",
-      lineWidth: 2
-    }));
-    this.rsiLowSeries = this.chart.addLineSeries(rsiLineOptions({
-      color: RSI_LOW_COLOR,
-      lineWidth: 3
-    }));
-    this.rsiHighSeries = this.chart.addLineSeries(rsiLineOptions({
-      color: RSI_HIGH_COLOR,
-      lineWidth: 4
+      color: "#ffffff",
+      lineWidth: 2,
+      lastValueVisible: true
     }));
     this.rsiEmaSeries = this.chart.addLineSeries(rsiLineOptions({
-      color: "#ffb74d",
-      lineWidth: 2
+      color: "#ffb000",
+      lineWidth: 2,
+      lastValueVisible: true
     }));
     this.rsiWmaSeries = this.chart.addLineSeries(rsiLineOptions({
-      color: "#ef5350",
-      lineWidth: 2
+      color: "#ff3347",
+      lineWidth: 2,
+      lastValueVisible: true
     }));
-    this.rsi70 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.65)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi80 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(255,43,214,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi50 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(209,212,220,0.24)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi20 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(139,0,0,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi30 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(38,166,154,0.65)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi70 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.42)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi80 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.72)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi50 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(210,210,210,0.22)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi20 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.72)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi30 = this.chart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.42)", lineWidth: 1, lineStyle: 2 }));
   }
 
   resize() {
@@ -1017,12 +1052,19 @@ class RsiOnlyPanel {
 
   draw(candles, rsiData, rsiEmaData, rsiWmaData, fit = false) {
     this.lastCandles = candles;
-    this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
-    this.rsiLowSeries.setData([]);
-    this.rsiHighSeries.setData([]);
+    this.rsiRegimeSeries.setData(rsiRegimeData(candles));
+    this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers([]);
+    this.rsiSeries.setMarkers(rsiData
+      .filter((point) => point.value <= RSI_LOW_LEVEL || point.value >= RSI_HIGH_LEVEL)
+      .map((point) => ({
+        time: point.time,
+        position: point.value >= RSI_HIGH_LEVEL ? "aboveBar" : "belowBar",
+        color: point.value >= RSI_HIGH_LEVEL ? "rgba(239,83,80,0.92)" : "rgba(76,175,80,0.92)",
+        shape: point.value >= RSI_HIGH_LEVEL ? "arrowDown" : "arrowUp",
+        text: point.value >= RSI_HIGH_LEVEL ? "80" : "20"
+      })));
     this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
     this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
     this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
@@ -1239,11 +1281,7 @@ class SingleChartPanel {
   }
 
   klineUrl() {
-    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${this.config.apiTf}&limit=${this.config.limit}`;
-  }
-
-  d1KlineUrl() {
-    return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=1d&limit=1000`;
+    return klineUrlFor(this.config.apiTf, this.config.limit);
   }
 
   refreshCandles() {
@@ -1278,19 +1316,13 @@ class SingleChartPanel {
     this.closeEl.textContent = "--";
     this.rsiEl.textContent = "RSI --";
 
-    const [response, d1Response] = await Promise.all([
-      fetch(this.klineUrl()),
-      fetch(this.d1KlineUrl())
-    ]);
+    const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} single HTTP ${response.status}`);
-    if (!d1Response.ok) throw new Error(`D2 background HTTP ${d1Response.status}`);
 
     const raw = await response.json();
-    const rawD1 = await d1Response.json();
     if (session !== sessionId) return;
 
     this.rawCandles = raw.map(toChartCandle);
-    this.rawD1Candles = rawD1.map(toChartCandle);
     this.refreshCandles();
     this.draw(fit);
     this.startWebSocket(session);
@@ -1331,15 +1363,7 @@ class SingleChartPanel {
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
-    const d2State = pineRsiFrameState(aggregateDailyCandles(this.rawD1Candles, 2));
-    this.rsiRegimeSeries.setData(candles.map((c) => {
-      const d2Bias = this.lookupD2Bias(d2State, c.time);
-      return {
-        time: c.time,
-        value: 100,
-        color: d2Bias === 1 ? "rgba(46,125,50,0.16)" : d2Bias === -1 ? "rgba(183,28,28,0.17)" : "rgba(0,0,0,0)"
-      };
-    }));
+    this.rsiRegimeSeries.setData(rsiRegimeData(candles));
     this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
@@ -1366,18 +1390,6 @@ class SingleChartPanel {
     this.rsiEl.classList.toggle("rsi-high", lastRsi !== null && lastRsi >= RSI_HIGH_LEVEL);
 
     if (fit) this.focusLatest();
-  }
-
-  lookupD2Bias(d2State, time) {
-    let activeBias = 0;
-    for (let index = 0; index < d2State.length; index += 1) {
-      const state = d2State[index];
-      const nextState = d2State[index + 1];
-      const effectiveTime = nextState?.time ?? state.time + (2 * 24 * 60 * 60);
-      if (effectiveTime > time) break;
-      activeBias = state.bias;
-    }
-    return activeBias;
   }
 
   startWebSocket(session) {
@@ -1462,6 +1474,10 @@ async function loadMarketMatrix() {
   setLiveStatus(false, "Loading matrix...");
 
   try {
+    const nextD2State = await loadSharedD2State();
+    if (session !== sessionId) return;
+    sharedD2State = nextD2State;
+
     await Promise.all([
       ...Array.from(panels.values()).map((panel) => panel.load(session)),
       singlePanel?.load(session)

@@ -16,6 +16,10 @@ const TV_GRID = "rgba(42,46,57,0.65)";
 const TV_TEXT = "#787b86";
 const TV_GREEN = "#26a69a";
 const TV_RED = "#ef5350";
+const SINGLE_RSI_HEIGHT_KEY = "singleChartRsiHeight";
+const SINGLE_RSI_DEFAULT_HEIGHT = 170;
+const SINGLE_RSI_MIN_HEIGHT = 90;
+const SINGLE_RSI_MAX_RATIO = 0.72;
 
 const FRAMES = [
   { key: "h4", label: "4h", apiTf: "4h", wsTf: "4h", aggregate: 1, limit: 360 },
@@ -738,9 +742,13 @@ class SingleChartPanel {
     this.frameEl = this.el.querySelector('[data-role="single-frame"]');
     this.closeEl = this.el.querySelector('[data-role="single-close"]');
     this.rsiEl = this.el.querySelector('[data-role="single-rsi"]');
+    this.cardNode = this.el.querySelector(".single-card");
     this.priceNode = this.el.querySelector('[data-role="single-price-chart"]');
     this.rsiNode = this.el.querySelector('[data-role="single-rsi-chart"]');
+    this.resizerNode = this.el.querySelector('[data-role="single-rsi-resizer"]');
     this.buttonsNode = $("singleTimeframes");
+    this.rsiHeight = this.loadRsiHeight();
+    this.dragState = null;
 
     this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions(TV_BG));
     this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions(TV_BG_DARK));
@@ -800,6 +808,13 @@ class SingleChartPanel {
     });
 
     this.renderButtons();
+    this.applyRsiHeight();
+    this.bindRsiResizer();
+  }
+
+  loadRsiHeight() {
+    const saved = Number(localStorage.getItem(SINGLE_RSI_HEIGHT_KEY));
+    return Number.isFinite(saved) && saved > 0 ? saved : SINGLE_RSI_DEFAULT_HEIGHT;
   }
 
   renderButtons() {
@@ -825,6 +840,7 @@ class SingleChartPanel {
   }
 
   resize() {
+    this.applyRsiHeight();
     this.priceChart.applyOptions({
       width: this.priceNode.clientWidth,
       height: this.priceNode.clientHeight
@@ -833,6 +849,61 @@ class SingleChartPanel {
       width: this.rsiNode.clientWidth,
       height: this.rsiNode.clientHeight
     });
+  }
+
+  maxRsiHeight() {
+    if (!this.cardNode.clientHeight) return Math.max(this.rsiHeight, SINGLE_RSI_MIN_HEIGHT);
+    const headerHeight = this.el.querySelector(".single-head")?.offsetHeight || 38;
+    const handleHeight = this.resizerNode?.offsetHeight || 8;
+    const availableHeight = Math.max(this.cardNode.clientHeight - headerHeight - handleHeight, SINGLE_RSI_MIN_HEIGHT);
+    return Math.max(SINGLE_RSI_MIN_HEIGHT, Math.floor(availableHeight * SINGLE_RSI_MAX_RATIO));
+  }
+
+  clampRsiHeight(value) {
+    return Math.min(Math.max(value, SINGLE_RSI_MIN_HEIGHT), this.maxRsiHeight());
+  }
+
+  applyRsiHeight() {
+    if (!this.cardNode) return;
+    const headerHeight = this.el.querySelector(".single-head")?.offsetHeight || 38;
+    if (this.cardNode.clientHeight) this.rsiHeight = this.clampRsiHeight(this.rsiHeight);
+    this.cardNode.style.gridTemplateRows = `${headerHeight}px minmax(140px, 1fr) 8px ${this.rsiHeight}px`;
+  }
+
+  bindRsiResizer() {
+    if (!this.resizerNode) return;
+
+    this.resizerNode.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      this.dragState = {
+        startY: event.clientY,
+        startHeight: this.rsiHeight
+      };
+      this.resizerNode.setPointerCapture(event.pointerId);
+      document.body.classList.add("single-rsi-resizing");
+    });
+
+    this.resizerNode.addEventListener("pointermove", (event) => {
+      if (!this.dragState) return;
+      const delta = this.dragState.startY - event.clientY;
+      this.rsiHeight = this.clampRsiHeight(this.dragState.startHeight + delta);
+      this.applyRsiHeight();
+      this.resize();
+    });
+
+    const stopResize = (event) => {
+      if (!this.dragState) return;
+      this.dragState = null;
+      localStorage.setItem(SINGLE_RSI_HEIGHT_KEY, String(Math.round(this.rsiHeight)));
+      document.body.classList.remove("single-rsi-resizing");
+      if (event.pointerId !== undefined && this.resizerNode.hasPointerCapture(event.pointerId)) {
+        this.resizerNode.releasePointerCapture(event.pointerId);
+      }
+      requestAnimationFrame(() => this.resize());
+    };
+
+    this.resizerNode.addEventListener("pointerup", stopResize);
+    this.resizerNode.addEventListener("pointercancel", stopResize);
   }
 
   klineUrl() {

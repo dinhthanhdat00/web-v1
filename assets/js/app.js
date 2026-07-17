@@ -1,3 +1,6 @@
+import { aggregateCandles, aggregateDailyCandles, toChartCandle } from "../../src/engine/market-data.js";
+import { anchoredVwap, crossSignals, emaFromClose, emaFromValues, jmaFromClose, rsi, wmaFromClose, wmaFromValues } from "../../src/engine/indicators.js";
+
 const API = "https://api.binance.com";
 const WS_BASE = "wss://stream.binance.com:9443/ws";
 const TIMEZONE_OFFSET_SECONDS = 7 * 60 * 60;
@@ -258,17 +261,6 @@ function rsiLineOptions(options = {}) {
   };
 }
 
-function toChartCandle(kline) {
-  return {
-    time: Math.floor(kline[0] / 1000),
-    open: Number(kline[1]),
-    high: Number(kline[2]),
-    low: Number(kline[3]),
-    close: Number(kline[4]),
-    volume: Number(kline[5])
-  };
-}
-
 function klineUrlFor(interval, limit = 500) {
   return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${interval}&limit=${limit}`;
 }
@@ -279,100 +271,6 @@ async function loadSharedD2State() {
 
   const raw = await response.json();
   return pineRsiFrameState(aggregateDailyCandles(raw.map(toChartCandle), 2));
-}
-
-function aggregateCandles(source, groupSize) {
-  if (groupSize <= 1) return source.slice();
-
-  const result = [];
-  for (let i = 0; i < source.length; i += groupSize) {
-    const group = source.slice(i, i + groupSize);
-    if (!group.length) continue;
-
-    result.push({
-      time: group[0].time,
-      open: group[0].open,
-      high: Math.max(...group.map((c) => c.high)),
-      low: Math.min(...group.map((c) => c.low)),
-      close: group[group.length - 1].close,
-      volume: group.reduce((sum, c) => sum + c.volume, 0)
-    });
-  }
-
-  return result;
-}
-
-function aggregateDailyCandles(source, dayCount) {
-  if (dayCount <= 1) return source.slice();
-
-  const secondsPerDay = 24 * 60 * 60;
-  const buckets = new Map();
-  source.forEach((candle) => {
-    const bucket = Math.floor(candle.time / (secondsPerDay * dayCount));
-    if (!buckets.has(bucket)) buckets.set(bucket, []);
-    buckets.get(bucket).push(candle);
-  });
-
-  return Array.from(buckets.values()).map((group) => ({
-    time: group[0].time,
-    open: group[0].open,
-    high: Math.max(...group.map((c) => c.high)),
-    low: Math.min(...group.map((c) => c.low)),
-    close: group[group.length - 1].close,
-    volume: group.reduce((sum, c) => sum + c.volume, 0)
-  }));
-}
-
-function emaFromValues(values, length) {
-  const result = [];
-  const k = 2 / (length + 1);
-  let previous = null;
-
-  values.forEach((point) => {
-    if (previous === null) {
-      previous = point.value;
-    } else {
-      previous = point.value * k + previous * (1 - k);
-    }
-
-    result.push({ time: point.time, value: previous });
-  });
-
-  return result;
-}
-
-function emaFromClose(candles, length) {
-  return emaFromValues(candles.map((c) => ({ time: c.time, value: c.close })), length);
-}
-
-function wmaFromValues(values, length) {
-  const result = [];
-  const weightSum = length * (length + 1) / 2;
-
-  for (let i = length - 1; i < values.length; i += 1) {
-    let sum = 0;
-    for (let j = 0; j < length; j += 1) {
-      sum += values[i - j].value * (length - j);
-    }
-    result.push({ time: values[i].time, value: sum / weightSum });
-  }
-
-  return result;
-}
-
-function wmaFromClose(candles, length) {
-  const result = [];
-  const weightSum = length * (length + 1) / 2;
-
-  for (let i = length - 1; i < candles.length; i += 1) {
-    let sum = 0;
-    for (let j = 0; j < length; j += 1) {
-      sum += candles[i - j].close * (length - j);
-    }
-    result.push({ time: candles[i].time, value: sum / weightSum });
-  }
-
-  return result;
 }
 
 function valueMap(points) {
@@ -687,146 +585,6 @@ function rsiSignalMarkers(frameState) {
   });
 
   return markers;
-}
-
-function jmaFromClose(candles, length, power, phase) {
-  const result = [];
-  const phaseRatio = phase < -100 ? 0.5 : phase > 100 ? 2.5 : phase / 100 + 1.5;
-  const beta = 0.45 * (length - 1) / (0.45 * (length - 1) + 2);
-  const alpha = Math.pow(beta, power);
-  const oneMinusAlphaSq = Math.pow(1 - alpha, 2);
-  const alphaSq = Math.pow(alpha, 2);
-  let jma = 0;
-  let e0 = 0;
-  let e1 = 0;
-  let e2 = 0;
-
-  candles.forEach((candle) => {
-    const src = candle.close;
-    e0 = (1 - alpha) * src + alpha * e0;
-    e1 = (src - e0) * (1 - beta) + beta * e1;
-    e2 = (e0 + phaseRatio * e1 - jma) * oneMinusAlphaSq + alphaSq * e2;
-    jma = e2 + jma;
-    result.push({ time: candle.time, value: jma });
-  });
-
-  return result;
-}
-
-function getAnchorBucket(time, anchorTf = "D") {
-  const d = dateInUtcPlus7(time);
-  const year = d.getUTCFullYear();
-  const month = d.getUTCMonth() + 1;
-  const day = d.getUTCDate();
-
-  if (anchorTf === "W") {
-    const dow = d.getUTCDay();
-    const daysFromMonday = (dow + 6) % 7;
-    const monday = new Date(Date.UTC(year, d.getUTCMonth(), day - daysFromMonday, 0, 0, 0));
-    return `${monday.getUTCFullYear()}-${pad2(monday.getUTCMonth() + 1)}-${pad2(monday.getUTCDate())}`;
-  }
-
-  if (anchorTf === "M") {
-    return `${year}-${pad2(month)}`;
-  }
-
-  return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
-function anchoredVwap(candles, anchorTf = "D") {
-  const result = [];
-  let currentBucket = null;
-  let cumulativeVolume = 0;
-  let cumulativeSrcVolume = 0;
-
-  candles.forEach((candle) => {
-    const bucket = getAnchorBucket(candle.time, anchorTf);
-    const currentVolume = Number.isFinite(candle.volume) ? candle.volume : 0;
-    const currentSrc = (candle.high + candle.low + candle.close) / 3;
-
-    if (bucket !== currentBucket) {
-      currentBucket = bucket;
-      cumulativeVolume = currentVolume;
-      cumulativeSrcVolume = currentSrc * currentVolume;
-    } else {
-      cumulativeVolume += currentVolume;
-      cumulativeSrcVolume += currentSrc * currentVolume;
-    }
-
-    result.push({
-      time: candle.time,
-      value: cumulativeVolume === 0 ? currentSrc : cumulativeSrcVolume / cumulativeVolume
-    });
-  });
-
-  return result;
-}
-
-function crossSignals(candles, fastBaseline, slowBaseline) {
-  const byTimeFast = new Map(fastBaseline.map((point) => [point.time, point.value]));
-  const byTimeSlow = new Map(slowBaseline.map((point) => [point.time, point.value]));
-  const result = new Map();
-
-  for (let i = 1; i < candles.length; i += 1) {
-    const prev = candles[i - 1];
-    const curr = candles[i];
-    const prevFast = byTimeFast.get(prev.time);
-    const currFast = byTimeFast.get(curr.time);
-    const prevSlow = byTimeSlow.get(prev.time);
-    const currSlow = byTimeSlow.get(curr.time);
-
-    if (prevFast !== undefined && currFast !== undefined) {
-      if (prev.close <= prevFast && curr.close > currFast) result.set(curr.time, "#4caf50");
-      if (prev.close >= prevFast && curr.close < currFast) result.set(curr.time, "#ff4d5a");
-    }
-
-    if (prevSlow !== undefined && currSlow !== undefined) {
-      if (prev.close <= prevSlow && curr.close > currSlow) result.set(curr.time, "#2f5cff");
-      if (prev.close >= prevSlow && curr.close < currSlow) result.set(curr.time, "#9c27b0");
-    }
-  }
-
-  return result;
-}
-
-function rsi(candles, length = 14) {
-  const result = [];
-  if (candles.length <= length) return result;
-
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= length; i += 1) {
-    const diff = candles[i].close - candles[i - 1].close;
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
-  }
-
-  let avgGain = gains / length;
-  let avgLoss = losses / length;
-
-  const firstRs = avgLoss === 0 ? null : avgGain / avgLoss;
-  result.push({
-    time: candles[length].time,
-    value: avgLoss === 0 ? 100 : avgGain === 0 ? 0 : 100 - (100 / (1 + firstRs))
-  });
-
-  for (let i = length + 1; i < candles.length; i += 1) {
-    const diff = candles[i].close - candles[i - 1].close;
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? -diff : 0;
-
-    avgGain = (avgGain * (length - 1) + gain) / length;
-    avgLoss = (avgLoss * (length - 1) + loss) / length;
-
-    const rs = avgLoss === 0 ? null : avgGain / avgLoss;
-    result.push({
-      time: candles[i].time,
-      value: avgLoss === 0 ? 100 : avgGain === 0 ? 0 : 100 - (100 / (1 + rs))
-    });
-  }
-
-  return result;
 }
 
 function closeSocket(ws) {

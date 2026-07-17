@@ -1293,6 +1293,9 @@ class SingleChartPanel {
     this.trendlineSeries = [];
     this.tempTrendlineSeries = null;
     this.trendlineStore = this.loadTrendlineStore();
+    this.rsiValueByTime = new Map();
+    this.closeValueByTime = new Map();
+    this.isSyncingCrosshair = false;
 
     this.priceChart = LightweightCharts.createChart(this.priceNode, singleChartOptions(SINGLE_BG));
     this.rsiChart = LightweightCharts.createChart(this.rsiNode, singleChartOptions("rgba(0,0,0,0)"));
@@ -1707,10 +1710,36 @@ class SingleChartPanel {
         this.selectTrendlineAt(param);
       }
     });
-    this.priceChart.subscribeCrosshairMove((param) => this.handleTrendlinePreview(param));
+    this.priceChart.subscribeCrosshairMove((param) => {
+      this.handleTrendlinePreview(param);
+      this.syncCrosshair("price", param);
+    });
+    this.rsiChart.subscribeCrosshairMove((param) => this.syncCrosshair("rsi", param));
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && this.isTrendlineDrawing) this.setTrendlineDrawing(false);
     });
+  }
+
+  syncCrosshair(source, param) {
+    if (this.isSyncingCrosshair) return;
+    const time = typeof param?.time === "number" ? param.time : null;
+    const targetChart = source === "price" ? this.rsiChart : this.priceChart;
+
+    if (time === null) {
+      targetChart.clearCrosshairPosition?.();
+      return;
+    }
+
+    const value = source === "price" ? this.rsiValueByTime.get(time) : this.closeValueByTime.get(time);
+    const series = source === "price" ? this.rsiSeries : this.candleSeries;
+    if (!Number.isFinite(value)) {
+      targetChart.clearCrosshairPosition?.();
+      return;
+    }
+
+    this.isSyncingCrosshair = true;
+    targetChart.setCrosshairPosition?.(value, time, series);
+    this.isSyncingCrosshair = false;
   }
 
   klineUrl() {
@@ -1825,6 +1854,8 @@ class SingleChartPanel {
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
     const rsiFrameState = pineRsiFrameState(candles);
+    this.closeValueByTime = new Map(candles.map((c) => [c.time, c.close]));
+    this.rsiValueByTime = new Map(rsiData.map((point) => [point.time, point.value]));
     this.rsiRegimeSeries.setData(rsiRegimeData(candles));
     this.rsiSeries.setData(layerState.rsi ? rsiData : []);
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);

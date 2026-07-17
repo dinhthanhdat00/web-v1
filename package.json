@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "check": "node --check assets/js/app.js",
     "test:engine": "node scripts/test-rsi-form-engine.mjs"
+    ,"fixture:record": "node scripts/record-rsi-fixtures.mjs"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,32 @@
+{
+  "name": "web-v1-github-pages",
+  "version": "1.0.0",
+  "description": "Dashboard web tĩnh hỗ trợ phân tích BTC theo phong cách swing trading đa khung thời gian, tập trung vào price action và bộ chỉ báo RSI14 + EMA9 + WMA45.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "node --check assets/js/app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dinhthanhdat00/web-v1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/dinhthanhdat00/web-v1/issues"
+  },
+  "homepage": "https://github.com/dinhthanhdat00/web-v1#readme",
+  "dependencies": {
+    "lightweight-charts": "^4.2.3",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "vite": "^8.1.5"
+  }
+}

@@ -1,5 +1,22 @@
 # Thành Đạt Trading Dashboard
 
+## Công Nghệ
+
+Project đã được chuyển sang nền **React + Vite** để dễ tách component và mở rộng tính năng trong các bản sau. Engine chart hiện tại vẫn giữ nguyên logic đã kiểm chứng, sau đó sẽ được tách dần thành các component React.
+
+### Phát triển local
+
+```powershell
+npm install
+npm run dev
+```
+
+Mở `http://localhost:5173`.
+
+### Deploy
+
+Mỗi lần push nhánh `main`, GitHub Actions sẽ chạy `npm ci`, build Vite ra `dist` và deploy lên GitHub Pages.
+
 Dashboard web tĩnh hỗ trợ phân tích BTC theo phong cách swing trading đa khung thời gian, tập trung vào price action và bộ chỉ báo RSI14 + EMA9 + WMA45.
 
 > Mục tiêu của dự án là tạo một không gian phân tích gọn, nhanh, dễ nhìn và đủ trực quan để lập kế hoạch giao dịch BTC trên các khung H4/H12.

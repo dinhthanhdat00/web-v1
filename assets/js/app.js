@@ -2133,4 +2133,4 @@ function boot() {
   loadMarketMatrix();
 }
 
-boot();
+export { boot };

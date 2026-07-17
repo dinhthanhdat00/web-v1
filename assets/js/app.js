@@ -80,6 +80,8 @@ let sessionId = 0;
 let tickerWs = null;
 let singlePanel = null;
 let sharedD2State = [];
+let activeViewKey = "chart";
+let resizeFrame = null;
 const panels = new Map();
 const rsiOnlyPanels = new Map();
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
@@ -848,7 +850,12 @@ function updateRsiValue(el, value) {
 
 function updateMetricValue(el, value, prefix = "") {
   if (!el) return;
-  el.textContent = value === null ? `${prefix}--` : `${prefix}${fmt.format(value)}`;
+  const nextText = value === null ? `${prefix}--` : `${prefix}${fmt.format(value)}`;
+  if (el.textContent !== nextText) el.textContent = nextText;
+}
+
+function setTextIfChanged(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
 }
 
 function updateOhlc(candle) {
@@ -873,6 +880,10 @@ class MarketPanel {
     this.rawCandles = [];
     this.candles = [];
     this.ws = null;
+    this.drawFrame = null;
+    this.lastPriceSize = { width: 0, height: 0 };
+    this.lastRsiSize = { width: 0, height: 0 };
+    this.hasRenderedPrice = false;
     this.closeEl = this.el.querySelector('[data-role="close"]');
     this.rsiEl = this.el.querySelector('[data-role="rsi"]');
     this.rsiEmaEl = this.el.querySelector('[data-role="rsi-ema"]');
@@ -948,13 +959,25 @@ class MarketPanel {
   }
 
   resize() {
+    const priceWidth = this.priceNode.clientWidth;
+    const priceHeight = this.priceNode.clientHeight;
+    const rsiWidth = this.rsiNode.clientWidth;
+    const rsiHeight = this.rsiNode.clientHeight;
+    if (
+      priceWidth === this.lastPriceSize.width &&
+      priceHeight === this.lastPriceSize.height &&
+      rsiWidth === this.lastRsiSize.width &&
+      rsiHeight === this.lastRsiSize.height
+    ) return;
+    this.lastPriceSize = { width: priceWidth, height: priceHeight };
+    this.lastRsiSize = { width: rsiWidth, height: rsiHeight };
     this.priceChart.applyOptions({
-      width: this.priceNode.clientWidth,
-      height: this.priceNode.clientHeight
+      width: priceWidth,
+      height: priceHeight
     });
     this.rsiChart.applyOptions({
-      width: this.rsiNode.clientWidth,
-      height: this.rsiNode.clientHeight
+      width: rsiWidth,
+      height: rsiHeight
     });
   }
 
@@ -994,6 +1017,7 @@ class MarketPanel {
 
     this.rawCandles = raw.map(toChartCandle);
     this.refreshCandles();
+    this.hasRenderedPrice = false;
     this.draw(true);
     this.startWebSocket(session);
   }
@@ -1002,58 +1026,57 @@ class MarketPanel {
     const candles = this.candles;
     if (!candles.length) return;
 
-    const baseline = jmaFromClose(candles, 70, 2, 5);
-    const slowBaseline = jmaFromClose(candles, 150, 2, 0);
-    const vwapData = anchoredVwap(candles, "W");
-    const barColors = crossSignals(candles, baseline, slowBaseline);
+    if (activeViewKey === "chart") {
+      const baseline = jmaFromClose(candles, 70, 2, 5);
+      const slowBaseline = jmaFromClose(candles, 150, 2, 0);
+      const vwapData = anchoredVwap(candles, "W");
+      const barColors = crossSignals(candles, baseline, slowBaseline);
 
-    this.candleSeries.setData(candles.map((c) => {
-      const signalColor = barColors.get(c.time);
-      const bodyColor = signalColor || (c.close >= c.open ? SINGLE_UP : SINGLE_DOWN);
-      return {
-      time: c.time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-        close: c.close,
-        color: bodyColor,
-        borderColor: bodyColor,
-        wickColor: bodyColor
-      };
-    }));
-    this.baselineSeries.setData(layerState.baseline ? baseline : []);
-    this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
-    this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+      this.candleSeries.setData(candles.map((c) => {
+        const signalColor = barColors.get(c.time);
+        const bodyColor = signalColor || (c.close >= c.open ? SINGLE_UP : SINGLE_DOWN);
+        return {
+          time: c.time,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          color: bodyColor,
+          borderColor: bodyColor,
+          wickColor: bodyColor
+        };
+      }));
+      this.baselineSeries.setData(layerState.baseline ? baseline : []);
+      this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
+      this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+      this.hasRenderedPrice = true;
+    }
 
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);
     const rsiWmaData = wmaFromValues(rsiData, RSI_WMA_LENGTH);
-    const rsiFrameState = pineRsiFrameState(candles);
-    this.rsiSeries.setData(layerState.rsi ? rsiColorData(rsiData) : []);
-    this.rsiLowSeries.setData([]);
-    this.rsiHighSeries.setData([]);
-    this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
-    this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
-    this.rsiSeries.setMarkers(rsiSignalMarkers(rsiFrameState));
-    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
-    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
-    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
-    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
-    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
 
     const last = candles[candles.length - 1];
     const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
     const lastEma = rsiEmaData.length ? rsiEmaData[rsiEmaData.length - 1].value : null;
     const lastWma = rsiWmaData.length ? rsiWmaData[rsiWmaData.length - 1].value : null;
-    this.closeEl.textContent = fmt.format(last.close);
+    setTextIfChanged(this.closeEl, fmt.format(last.close));
     updateRsiValue(this.rsiEl, lastRsi);
     updateMetricValue(this.rsiEmaEl, lastEma);
     updateMetricValue(this.rsiWmaEl, lastWma);
-    rsiOnlyPanels.get(this.config.key)?.draw(candles, rsiData, rsiEmaData, rsiWmaData, fit);
+    rsiOnlyPanels.get(this.config.key)?.updateFromSource(candles, rsiData, rsiEmaData, rsiWmaData, fit);
 
     if (this.config.key === "h4") updateOhlc(last);
 
-    if (fit) this.focusLatest();
+    if (fit && activeViewKey === "chart") this.focusLatest();
+  }
+
+  scheduleDraw(fit = false) {
+    if (this.drawFrame) return;
+    this.drawFrame = requestAnimationFrame(() => {
+      this.drawFrame = null;
+      this.draw(fit);
+    });
   }
 
   startWebSocket(session) {
@@ -1101,7 +1124,7 @@ class MarketPanel {
       }
 
       this.refreshCandles();
-      this.draw(false);
+      this.scheduleDraw(false);
     };
   }
 }
@@ -1116,6 +1139,9 @@ class RsiOnlyPanel {
     this.countdownEl = createCountdownNode(this.el.querySelector(".frame-metrics"));
     this.chartNode = this.el.querySelector('[data-role="rsi-only-chart"]');
     this.lastCandles = [];
+    this.lastPayload = null;
+    this.lastSize = { width: 0, height: 0 };
+    this.levelsKey = "";
 
     this.chart = LightweightCharts.createChart(this.chartNode, chartOptions(TV_BG_DARK));
     applyRsiChartScale(this.chart);
@@ -1152,10 +1178,38 @@ class RsiOnlyPanel {
   }
 
   resize() {
+    const width = this.chartNode.clientWidth;
+    const height = this.chartNode.clientHeight;
+    if (width === this.lastSize.width && height === this.lastSize.height) return;
+    this.lastSize = { width, height };
     this.chart.applyOptions({
-      width: this.chartNode.clientWidth,
-      height: this.chartNode.clientHeight
+      width,
+      height
     });
+  }
+
+  setLevels(candles) {
+    const first = candles[0]?.time || 0;
+    const last = candles[candles.length - 1]?.time || 0;
+    const key = `${candles.length}:${first}:${last}`;
+    if (key === this.levelsKey) return;
+    this.levelsKey = key;
+    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
+    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
+    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
+    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
+    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
+  }
+
+  updateFromSource(candles, rsiData, rsiEmaData, rsiWmaData, fit = false) {
+    this.lastPayload = { candles, rsiData, rsiEmaData, rsiWmaData, fit };
+    if (activeViewKey === "rsi") this.draw(candles, rsiData, rsiEmaData, rsiWmaData, fit);
+  }
+
+  drawCached(fit = false) {
+    if (!this.lastPayload) return;
+    const payload = this.lastPayload;
+    this.draw(payload.candles, payload.rsiData, payload.rsiEmaData, payload.rsiWmaData, fit || payload.fit);
   }
 
   focusLatest(bars = VISIBLE_BARS) {
@@ -1175,11 +1229,7 @@ class RsiOnlyPanel {
     this.rsiEmaSeries.setData(layerState.rsiEma ? rsiEmaData : []);
     this.rsiWmaSeries.setData(layerState.rsiWma ? rsiWmaData : []);
     this.rsiSeries.setMarkers(rsiSignalMarkers(rsiFrameState));
-    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
-    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
-    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
-    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
-    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
+    this.setLevels(candles);
 
     const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
     const lastEma = rsiEmaData.length ? rsiEmaData[rsiEmaData.length - 1].value : null;
@@ -1199,6 +1249,11 @@ class SingleChartPanel {
     this.rawCandles = [];
     this.candles = [];
     this.ws = null;
+    this.drawFrame = null;
+    this.lastPriceSize = { width: 0, height: 0 };
+    this.lastRsiSize = { width: 0, height: 0 };
+    this.levelsKey = "";
+    this.hasRendered = false;
     this.el = $("singleView");
     this.symbolEl = this.el.querySelector('[data-role="single-symbol"]');
     this.frameEl = this.el.querySelector('[data-role="single-frame"]');
@@ -1354,13 +1409,25 @@ class SingleChartPanel {
 
   resize() {
     this.applyRsiHeight();
+    const priceWidth = this.priceNode.clientWidth;
+    const priceHeight = this.priceNode.clientHeight;
+    const rsiWidth = this.rsiNode.clientWidth;
+    const rsiHeight = this.rsiNode.clientHeight;
+    if (
+      priceWidth === this.lastPriceSize.width &&
+      priceHeight === this.lastPriceSize.height &&
+      rsiWidth === this.lastRsiSize.width &&
+      rsiHeight === this.lastRsiSize.height
+    ) return;
+    this.lastPriceSize = { width: priceWidth, height: priceHeight };
+    this.lastRsiSize = { width: rsiWidth, height: rsiHeight };
     this.priceChart.applyOptions({
-      width: this.priceNode.clientWidth,
-      height: this.priceNode.clientHeight
+      width: priceWidth,
+      height: priceHeight
     });
     this.rsiChart.applyOptions({
-      width: this.rsiNode.clientWidth,
-      height: this.rsiNode.clientHeight
+      width: rsiWidth,
+      height: rsiHeight
     });
   }
 
@@ -1649,6 +1716,27 @@ class SingleChartPanel {
     this.rsiChart.timeScale().setVisibleLogicalRange({ from, to });
   }
 
+  setRsiLevels(candles) {
+    const first = candles[0]?.time || 0;
+    const last = candles[candles.length - 1]?.time || 0;
+    const key = `${candles.length}:${first}:${last}`;
+    if (key === this.levelsKey) return;
+    this.levelsKey = key;
+    this.rsi70.setData(candles.map((c) => ({ time: c.time, value: 70 })));
+    this.rsi80.setData(candles.map((c) => ({ time: c.time, value: RSI_HIGH_LEVEL })));
+    this.rsi50.setData(candles.map((c) => ({ time: c.time, value: 50 })));
+    this.rsi20.setData(candles.map((c) => ({ time: c.time, value: RSI_LOW_LEVEL })));
+    this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
+  }
+
+  scheduleDraw(fit = false) {
+    if (this.drawFrame) return;
+    this.drawFrame = requestAnimationFrame(() => {
+      this.drawFrame = null;
+      this.draw(fit);
+    });
+  }
+
   async setFrame(key, reload = false) {
     const nextConfig = this.configs.find((item) => item.key === key);
     if (!nextConfig || nextConfig.key === this.config.key) return;
@@ -1677,7 +1765,8 @@ class SingleChartPanel {
 
     this.rawCandles = raw.map(toChartCandle);
     this.refreshCandles();
-    this.draw(fit);
+    this.hasRendered = false;
+    if (activeViewKey === "single") this.draw(fit);
     this.startWebSocket(session);
   }
 
@@ -1732,12 +1821,13 @@ class SingleChartPanel {
     const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
     const lastEma = rsiEmaData.length ? rsiEmaData[rsiEmaData.length - 1].value : null;
     const lastWma = rsiWmaData.length ? rsiWmaData[rsiWmaData.length - 1].value : null;
-    this.closeEl.textContent = `Close ${fmt.format(last.close)}`;
-    this.rsiEl.textContent = lastRsi === null ? "RSI --" : `RSI ${fmt.format(lastRsi)}`;
+    setTextIfChanged(this.closeEl, `Close ${fmt.format(last.close)}`);
+    setTextIfChanged(this.rsiEl, lastRsi === null ? "RSI --" : `RSI ${fmt.format(lastRsi)}`);
     updateMetricValue(this.emaEl, lastEma, "E ");
     updateMetricValue(this.wmaEl, lastWma, "W ");
     this.rsiEl.classList.toggle("rsi-low", lastRsi !== null && lastRsi <= RSI_LOW_LEVEL);
     this.rsiEl.classList.toggle("rsi-high", lastRsi !== null && lastRsi >= RSI_HIGH_LEVEL);
+    this.hasRendered = true;
 
     if (fit) this.focusLatest();
   }
@@ -1769,7 +1859,7 @@ class SingleChartPanel {
       }
 
       this.refreshCandles();
-      this.draw(false);
+      if (activeViewKey === "single") this.scheduleDraw(false);
     };
 
     this.ws.onclose = () => {
@@ -1891,9 +1981,18 @@ function resizeAll() {
   singlePanel?.resize();
 }
 
+function scheduleResizeAll() {
+  if (resizeFrame) return;
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null;
+    resizeAll();
+  });
+}
+
 function redrawAll() {
   panels.forEach((panel) => panel.draw(false));
-  singlePanel?.draw(false);
+  if (activeViewKey === "rsi") rsiOnlyPanels.forEach((panel) => panel.drawCached(false));
+  if (activeViewKey === "single") singlePanel?.draw(false);
 }
 
 function updateAllCountdowns() {
@@ -1911,7 +2010,11 @@ function setActiveView(view, persist = true) {
   document.querySelectorAll(".view-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.view === nextView));
   document.querySelectorAll(".view-panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${nextView}View`));
   if (persist) localStorage.setItem("marketMatrixView", nextView);
-  requestAnimationFrame(resizeAll);
+  activeViewKey = nextView;
+  if (nextView === "chart") panels.forEach((panel) => panel.draw(!panel.hasRenderedPrice));
+  if (nextView === "rsi") rsiOnlyPanels.forEach((panel) => panel.drawCached(false));
+  if (nextView === "single") singlePanel?.draw(!singlePanel.hasRendered);
+  scheduleResizeAll();
 }
 
 function initialView() {
@@ -1940,9 +2043,9 @@ function boot() {
   const initialTf = normalizeTfKey(queryParams().get("tf")) || localStorage.getItem("singleChartTimeframe");
   if (initialTf) singlePanel.setFrame(initialTf, false);
 
-  const resizeObserver = new ResizeObserver(resizeAll);
+  const resizeObserver = new ResizeObserver(scheduleResizeAll);
   document.querySelectorAll(".price-chart, .rsi-chart, .rsi-only-chart, .single-price-chart, .single-rsi-chart").forEach((node) => resizeObserver.observe(node));
-  window.addEventListener("resize", resizeAll);
+  window.addEventListener("resize", scheduleResizeAll);
 
   $("symbolForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1953,7 +2056,7 @@ function boot() {
   $("reloadCharts").addEventListener("click", reloadCharts);
   $("toggleControls").addEventListener("click", () => {
     $("controlsPanel").classList.toggle("open");
-    requestAnimationFrame(resizeAll);
+    scheduleResizeAll();
   });
 
   document.querySelectorAll(".layer-toggle").forEach((checkbox) => {
@@ -1975,7 +2078,7 @@ function boot() {
 
   startClock();
   updateAllCountdowns();
-  resizeAll();
+  scheduleResizeAll();
   setActiveView(initialView(), false);
   loadMarketMatrix();
 }

@@ -1,4 +1,4 @@
-XTB-SPRINGTEA - REALTIME CHART + BACKTEST
+THÀNH ĐẠT - HÀNH TRÌNH TRADE ĐỂ TỰ DO TÀI CHÍNH
 
 Cách chạy:
 1. Giải nén ZIP.
@@ -122,7 +122,7 @@ Cập nhật màu Fibonacci
 
 
 Cập nhật giao diện compact đã kiểm tra
-- Khung thời gian nằm trên hàng trên cùng, cùng hàng với XTB-SPRINGTEA.
+- Khung thời gian nằm trên hàng trên cùng, cùng hàng với thương hiệu THÀNH ĐẠT.
 - Chữ và nút được thu nhỏ để gọn hơn.
 - Công cụ vẽ nằm cùng hàng với các nút bật/tắt chỉ báo.
 - Bộ công cụ vẽ được thu nhỏ.

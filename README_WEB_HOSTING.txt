@@ -1,4 +1,4 @@
-XTB-SPRINGTEA WEB RELEASE
+THÀNH ĐẠT WEB RELEASE
 
 Đây là bản web tĩnh, có thể chạy trên điện thoại và chia sẻ cho người khác qua hosting HTTPS.
 

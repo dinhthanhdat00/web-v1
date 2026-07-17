@@ -26,6 +26,7 @@ const SINGLE_RSI_HEIGHT_KEY = "singleChartRsiHeight";
 const SINGLE_RSI_DEFAULT_HEIGHT = 170;
 const SINGLE_RSI_MIN_HEIGHT = 90;
 const SINGLE_RSI_MAX_RATIO = 0.72;
+const SINGLE_TRENDLINES_KEY = "singleChartTrendlinesV1";
 const SEMANTIC = {
   INIT: 0,
   NEUTRAL_REARM: 1,
@@ -118,6 +119,51 @@ function formatTickTime(time) {
   }
 
   return `${pad2(hour)}:${pad2(minute)}`;
+}
+
+function timeframeSeconds(config) {
+  const raw = config.wsTf || config.apiTf || "";
+  const match = raw.match(/^(\d+)([mhdw])$/i);
+  if (!match) return 0;
+
+  const value = Number(match[1]) || 1;
+  const unit = match[2].toLowerCase();
+  const base = unit === "m" ? 60 : unit === "h" ? 3600 : unit === "d" ? 86400 : unit === "w" ? 604800 : 0;
+  return base * value * (config.aggregate || 1);
+}
+
+function formatCountdown(seconds) {
+  const safe = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(safe / 86400);
+  const hours = Math.floor((safe % 86400) / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+
+  if (days > 0) return `${days}d ${pad2(hours)}:${pad2(minutes)}:${pad2(secs)}`;
+  if (hours > 0) return `${pad2(hours)}:${pad2(minutes)}:${pad2(secs)}`;
+  return `${pad2(minutes)}:${pad2(secs)}`;
+}
+
+function secondsUntilCandleClose(config, nowSeconds = Date.now() / 1000) {
+  const tfSeconds = timeframeSeconds(config);
+  if (!tfSeconds) return 0;
+  const elapsed = Math.floor(nowSeconds) % tfSeconds;
+  return elapsed === 0 ? tfSeconds : tfSeconds - elapsed;
+}
+
+function createCountdownNode(parent, compact = false) {
+  const node = document.createElement("span");
+  node.className = compact ? "candle-countdown compact" : "candle-countdown";
+  node.textContent = "--:--";
+  parent?.appendChild(node);
+  return node;
+}
+
+function updateCountdownNode(node, config) {
+  if (!node) return;
+  const remaining = secondsUntilCandleClose(config);
+  node.textContent = formatCountdown(remaining);
+  node.classList.toggle("soon", remaining <= 5 * 60);
 }
 
 function chartOptions(background = TV_BG) {
@@ -800,6 +846,11 @@ function updateRsiValue(el, value) {
   el.classList.toggle("rsi-high", value !== null && value >= 80);
 }
 
+function updateMetricValue(el, value, prefix = "") {
+  if (!el) return;
+  el.textContent = value === null ? `${prefix}--` : `${prefix}${fmt.format(value)}`;
+}
+
 function updateOhlc(candle) {
   if (!candle) {
     $("mainOhlc").textContent = "O -- H -- L -- C --";
@@ -824,20 +875,23 @@ class MarketPanel {
     this.ws = null;
     this.closeEl = this.el.querySelector('[data-role="close"]');
     this.rsiEl = this.el.querySelector('[data-role="rsi"]');
+    this.rsiEmaEl = this.el.querySelector('[data-role="rsi-ema"]');
+    this.rsiWmaEl = this.el.querySelector('[data-role="rsi-wma"]');
+    this.countdownEl = createCountdownNode(this.el.querySelector(".frame-metrics"));
     this.priceNode = this.el.querySelector('[data-role="price-chart"]');
     this.rsiNode = this.el.querySelector('[data-role="rsi-chart"]');
 
-    this.priceChart = LightweightCharts.createChart(this.priceNode, chartOptions(TV_BG));
-    this.rsiChart = LightweightCharts.createChart(this.rsiNode, chartOptions(TV_BG_DARK));
+    this.priceChart = LightweightCharts.createChart(this.priceNode, singleChartOptions(SINGLE_BG));
+    this.rsiChart = LightweightCharts.createChart(this.rsiNode, singleChartOptions("rgba(0,0,0,0)"));
     applyRsiChartScale(this.rsiChart);
 
     this.candleSeries = this.priceChart.addCandlestickSeries({
-      upColor: TV_GREEN,
-      downColor: TV_RED,
-      borderUpColor: TV_GREEN,
-      borderDownColor: TV_RED,
-      wickUpColor: TV_GREEN,
-      wickDownColor: TV_RED,
+      upColor: SINGLE_UP,
+      downColor: SINGLE_DOWN,
+      borderUpColor: SINGLE_UP,
+      borderDownColor: SINGLE_DOWN,
+      wickUpColor: SINGLE_UP,
+      wickDownColor: SINGLE_DOWN,
       lastValueVisible: false,
       priceLineVisible: false
     });
@@ -845,21 +899,21 @@ class MarketPanel {
       color: "#fdd835",
       lineWidth: 2,
       title: "",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false
     });
     this.slowBaselineSeries = this.priceChart.addLineSeries({
       color: "#ab47bc",
       lineWidth: 2,
       title: "",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false
     });
     this.vwapSeries = this.priceChart.addLineSeries({
       color: "#f0f3fa",
       lineWidth: 2,
       title: "",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false
     });
     this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({
@@ -882,11 +936,11 @@ class MarketPanel {
       color: "#ef5350",
       lineWidth: 2
     }));
-    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.65)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(255,43,214,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(209,212,220,0.24)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(139,0,0,0.8)", lineWidth: 1, lineStyle: 2 }));
-    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(38,166,154,0.65)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi70 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.42)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi80 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(239,83,80,0.72)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi50 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(210,210,210,0.22)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi20 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.72)", lineWidth: 1, lineStyle: 2 }));
+    this.rsi30 = this.rsiChart.addLineSeries(rsiLineOptions({ color: "rgba(76,175,80,0.42)", lineWidth: 1, lineStyle: 2 }));
 
     this.priceChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (range) this.rsiChart.timeScale().setVisibleLogicalRange(range);
@@ -928,6 +982,9 @@ class MarketPanel {
     closeSocket(this.ws);
     this.closeEl.textContent = "--";
     updateRsiValue(this.rsiEl, null);
+    updateMetricValue(this.rsiEmaEl, null);
+    updateMetricValue(this.rsiWmaEl, null);
+    updateCountdownNode(this.countdownEl, this.config);
 
     const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
@@ -952,7 +1009,7 @@ class MarketPanel {
 
     this.candleSeries.setData(candles.map((c) => {
       const signalColor = barColors.get(c.time);
-      const bodyColor = signalColor || (c.close >= c.open ? TV_GREEN : TV_RED);
+      const bodyColor = signalColor || (c.close >= c.open ? SINGLE_UP : SINGLE_DOWN);
       return {
       time: c.time,
       open: c.open,
@@ -986,8 +1043,12 @@ class MarketPanel {
 
     const last = candles[candles.length - 1];
     const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
+    const lastEma = rsiEmaData.length ? rsiEmaData[rsiEmaData.length - 1].value : null;
+    const lastWma = rsiWmaData.length ? rsiWmaData[rsiWmaData.length - 1].value : null;
     this.closeEl.textContent = fmt.format(last.close);
     updateRsiValue(this.rsiEl, lastRsi);
+    updateMetricValue(this.rsiEmaEl, lastEma);
+    updateMetricValue(this.rsiWmaEl, lastWma);
     rsiOnlyPanels.get(this.config.key)?.draw(candles, rsiData, rsiEmaData, rsiWmaData, fit);
 
     if (this.config.key === "h4") updateOhlc(last);
@@ -1050,6 +1111,9 @@ class RsiOnlyPanel {
     this.config = config;
     this.el = document.querySelector(`[data-rsi-frame="${config.key}"]`);
     this.valueEl = this.el.querySelector('[data-role="rsi-only-value"]');
+    this.emaEl = this.el.querySelector('[data-role="rsi-only-ema"]');
+    this.wmaEl = this.el.querySelector('[data-role="rsi-only-wma"]');
+    this.countdownEl = createCountdownNode(this.el.querySelector(".frame-metrics"));
     this.chartNode = this.el.querySelector('[data-role="rsi-only-chart"]');
     this.lastCandles = [];
 
@@ -1118,7 +1182,12 @@ class RsiOnlyPanel {
     this.rsi30.setData(candles.map((c) => ({ time: c.time, value: 30 })));
 
     const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
+    const lastEma = rsiEmaData.length ? rsiEmaData[rsiEmaData.length - 1].value : null;
+    const lastWma = rsiWmaData.length ? rsiWmaData[rsiWmaData.length - 1].value : null;
     updateRsiValue(this.valueEl, lastRsi);
+    updateMetricValue(this.emaEl, lastEma);
+    updateMetricValue(this.wmaEl, lastWma);
+    updateCountdownNode(this.countdownEl, this.config);
     if (fit) this.focusLatest();
   }
 }
@@ -1135,13 +1204,30 @@ class SingleChartPanel {
     this.frameEl = this.el.querySelector('[data-role="single-frame"]');
     this.closeEl = this.el.querySelector('[data-role="single-close"]');
     this.rsiEl = this.el.querySelector('[data-role="single-rsi"]');
+    this.emaEl = this.el.querySelector('[data-role="single-ema"]');
+    this.wmaEl = this.el.querySelector('[data-role="single-wma"]');
+    this.countdownEl = createCountdownNode(this.el.querySelector(".single-title"), true);
     this.cardNode = this.el.querySelector(".single-card");
     this.priceNode = this.el.querySelector('[data-role="single-price-chart"]');
+    this.chartCountdownEl = createCountdownNode(this.priceNode, true);
+    this.chartCountdownEl.classList.add("single-chart-countdown");
     this.rsiNode = this.el.querySelector('[data-role="single-rsi-chart"]');
     this.resizerNode = this.el.querySelector('[data-role="single-rsi-resizer"]');
     this.buttonsNode = $("singleTimeframes");
+    this.trendlineToolButton = this.el.querySelector('[data-role="trendline-tool"]');
+    this.trendlineDeleteButton = this.el.querySelector('[data-role="trendline-delete"]');
+    this.trendlineUndoButton = this.el.querySelector('[data-role="trendline-undo"]');
+    this.trendlineClearButton = this.el.querySelector('[data-role="trendline-clear"]');
     this.rsiHeight = this.loadRsiHeight();
     this.dragState = null;
+    this.isTrendlineDrawing = false;
+    this.pendingTrendPoint = null;
+    this.pendingPreviewPoint = null;
+    this.previewFrame = null;
+    this.selectedTrendlineIndex = null;
+    this.trendlineSeries = [];
+    this.tempTrendlineSeries = null;
+    this.trendlineStore = this.loadTrendlineStore();
 
     this.priceChart = LightweightCharts.createChart(this.priceNode, singleChartOptions(SINGLE_BG));
     this.rsiChart = LightweightCharts.createChart(this.rsiNode, singleChartOptions("rgba(0,0,0,0)"));
@@ -1176,21 +1262,21 @@ class SingleChartPanel {
       color: "rgba(255,193,7,0.86)",
       lineWidth: 1,
       title: "",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false
     });
     this.slowBaselineSeries = this.priceChart.addLineSeries({
       color: "rgba(255,64,129,0.78)",
       lineWidth: 1,
       title: "",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false
     });
     this.vwapSeries = this.priceChart.addLineSeries({
       color: "rgba(240,243,250,0.78)",
       lineWidth: 1,
       title: "",
-      lastValueVisible: false,
+      lastValueVisible: true,
       priceLineVisible: false
     });
     this.rsiRegimeSeries = this.rsiChart.addHistogramSeries({
@@ -1230,6 +1316,8 @@ class SingleChartPanel {
     this.renderButtons();
     this.applyRsiHeight();
     this.bindRsiResizer();
+    this.bindDrawingTools();
+    this.renderTrendlines();
   }
 
   loadRsiHeight() {
@@ -1254,9 +1342,14 @@ class SingleChartPanel {
   syncHeader() {
     this.symbolEl.textContent = currentSymbol;
     this.frameEl.textContent = this.config.label;
+    this.selectedTrendlineIndex = null;
+    updateCountdownNode(this.countdownEl, this.config);
+    updateCountdownNode(this.chartCountdownEl, this.config);
     this.buttonsNode.querySelectorAll(".single-timeframe").forEach((button) => {
       button.classList.toggle("active", button.dataset.tf === this.config.key);
     });
+    this.setTrendlineDrawing(false);
+    this.renderTrendlines();
   }
 
   resize() {
@@ -1326,6 +1419,216 @@ class SingleChartPanel {
     this.resizerNode.addEventListener("pointercancel", stopResize);
   }
 
+  loadTrendlineStore() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(SINGLE_TRENDLINES_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  saveTrendlineStore() {
+    localStorage.setItem(SINGLE_TRENDLINES_KEY, JSON.stringify(this.trendlineStore));
+  }
+
+  trendlineKey() {
+    return `${currentSymbol}:${this.config.key}`;
+  }
+
+  currentTrendlines() {
+    const key = this.trendlineKey();
+    if (!Array.isArray(this.trendlineStore[key])) this.trendlineStore[key] = [];
+    return this.trendlineStore[key];
+  }
+
+  makeTrendlineSeries(isPreview = false, isSelected = false) {
+    return this.priceChart.addLineSeries({
+      color: isSelected ? "rgba(246,184,75,0.98)" : isPreview ? "rgba(240,243,250,0.52)" : "rgba(240,243,250,0.88)",
+      lineWidth: isSelected ? 2 : 1,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false
+    });
+  }
+
+  clearTrendlineSeries() {
+    this.trendlineSeries.forEach((series) => this.priceChart.removeSeries(series));
+    this.trendlineSeries = [];
+    if (this.tempTrendlineSeries) {
+      this.priceChart.removeSeries(this.tempTrendlineSeries);
+      this.tempTrendlineSeries = null;
+    }
+  }
+
+  normalizeTrendlineData(start, end) {
+    return [start, end]
+      .map((point) => ({ time: Number(point.time), value: Number(point.value) }))
+      .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value))
+      .sort((a, b) => a.time - b.time);
+  }
+
+  renderTrendlines() {
+    if (!this.priceChart) return;
+    this.clearTrendlineSeries();
+    this.currentTrendlines().forEach((line, index) => {
+      const data = this.normalizeTrendlineData(line.start, line.end);
+      if (data.length !== 2 || data[0].time === data[1].time) return;
+      const series = this.makeTrendlineSeries(false, index === this.selectedTrendlineIndex);
+      series.setData(data);
+      this.trendlineSeries.push(series);
+    });
+  }
+
+  setTrendlineDrawing(enabled) {
+    this.isTrendlineDrawing = enabled;
+    this.pendingTrendPoint = null;
+    this.pendingPreviewPoint = null;
+    this.trendlineToolButton?.classList.toggle("active", enabled);
+    this.el.classList.toggle("trendline-drawing", enabled);
+    if (this.previewFrame) {
+      cancelAnimationFrame(this.previewFrame);
+      this.previewFrame = null;
+    }
+    if (this.tempTrendlineSeries) {
+      this.priceChart.removeSeries(this.tempTrendlineSeries);
+      this.tempTrendlineSeries = null;
+    }
+  }
+
+  pointFromClick(param) {
+    if (!param?.point) return null;
+    const rawTime = param.time ?? this.priceChart.timeScale().coordinateToTime(param.point.x);
+    const price = this.candleSeries.coordinateToPrice(param.point.y);
+    const time = typeof rawTime === "number" ? rawTime : null;
+    if (!Number.isFinite(time) || !Number.isFinite(price)) return null;
+    return { time, value: price };
+  }
+
+  handleTrendlineClick(param) {
+    if (!this.isTrendlineDrawing) return;
+    const point = this.pointFromClick(param);
+    if (!point) return;
+
+    if (!this.pendingTrendPoint) {
+      this.selectedTrendlineIndex = null;
+      this.renderTrendlines();
+      this.pendingTrendPoint = point;
+      if (!this.tempTrendlineSeries) this.tempTrendlineSeries = this.makeTrendlineSeries(true);
+      this.tempTrendlineSeries.setData([]);
+      return;
+    }
+
+    const data = this.normalizeTrendlineData(this.pendingTrendPoint, point);
+    if (data.length === 2 && data[0].time !== data[1].time) {
+      this.currentTrendlines().push({ start: data[0], end: data[1] });
+      this.saveTrendlineStore();
+      this.pendingTrendPoint = null;
+      this.pendingPreviewPoint = null;
+      this.selectedTrendlineIndex = this.currentTrendlines().length - 1;
+      this.renderTrendlines();
+    }
+  }
+
+  handleTrendlinePreview(param) {
+    if (!this.isTrendlineDrawing || !this.pendingTrendPoint) return;
+    if (!this.tempTrendlineSeries) this.tempTrendlineSeries = this.makeTrendlineSeries(true);
+    const point = this.pointFromClick(param);
+    if (!point || point.time === this.pendingTrendPoint.time) return;
+    this.pendingPreviewPoint = point;
+    if (this.previewFrame) return;
+    this.previewFrame = requestAnimationFrame(() => {
+      this.previewFrame = null;
+      if (!this.pendingPreviewPoint || !this.pendingTrendPoint || !this.tempTrendlineSeries) return;
+      const data = this.normalizeTrendlineData(this.pendingTrendPoint, this.pendingPreviewPoint);
+      if (data.length === 2) this.tempTrendlineSeries.setData(data);
+    });
+  }
+
+  distanceToSegment(point, start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    if (dx === 0 && dy === 0) return Math.hypot(point.x - start.x, point.y - start.y);
+    const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)));
+    const x = start.x + t * dx;
+    const y = start.y + t * dy;
+    return Math.hypot(point.x - x, point.y - y);
+  }
+
+  trendlineScreenPoints(line) {
+    const data = this.normalizeTrendlineData(line.start, line.end);
+    if (data.length !== 2) return null;
+    const startX = this.priceChart.timeScale().timeToCoordinate(data[0].time);
+    const endX = this.priceChart.timeScale().timeToCoordinate(data[1].time);
+    const startY = this.candleSeries.priceToCoordinate(data[0].value);
+    const endY = this.candleSeries.priceToCoordinate(data[1].value);
+    if (![startX, endX, startY, endY].every(Number.isFinite)) return null;
+    return {
+      start: { x: startX, y: startY },
+      end: { x: endX, y: endY }
+    };
+  }
+
+  selectTrendlineAt(param) {
+    if (this.isTrendlineDrawing || !param?.point) return;
+    const hitRadius = 8;
+    let nearest = null;
+    this.currentTrendlines().forEach((line, index) => {
+      const screen = this.trendlineScreenPoints(line);
+      if (!screen) return;
+      const distance = this.distanceToSegment(param.point, screen.start, screen.end);
+      if (distance <= hitRadius && (!nearest || distance < nearest.distance)) nearest = { index, distance };
+    });
+    this.selectedTrendlineIndex = nearest ? nearest.index : null;
+    this.renderTrendlines();
+  }
+
+  deleteSelectedTrendline() {
+    if (this.selectedTrendlineIndex === null) return;
+    const lines = this.currentTrendlines();
+    lines.splice(this.selectedTrendlineIndex, 1);
+    this.selectedTrendlineIndex = null;
+    this.saveTrendlineStore();
+    this.renderTrendlines();
+  }
+
+  undoTrendline() {
+    const lines = this.currentTrendlines();
+    lines.pop();
+    this.selectedTrendlineIndex = null;
+    this.saveTrendlineStore();
+    this.renderTrendlines();
+  }
+
+  clearTrendlines() {
+    this.trendlineStore[this.trendlineKey()] = [];
+    this.saveTrendlineStore();
+    this.pendingTrendPoint = null;
+    this.pendingPreviewPoint = null;
+    this.selectedTrendlineIndex = null;
+    this.renderTrendlines();
+  }
+
+  bindDrawingTools() {
+    this.trendlineToolButton?.addEventListener("click", () => {
+      this.setTrendlineDrawing(!this.isTrendlineDrawing);
+    });
+    this.trendlineDeleteButton?.addEventListener("click", () => this.deleteSelectedTrendline());
+    this.trendlineUndoButton?.addEventListener("click", () => this.undoTrendline());
+    this.trendlineClearButton?.addEventListener("click", () => this.clearTrendlines());
+    this.priceChart.subscribeClick((param) => {
+      if (this.isTrendlineDrawing) {
+        this.handleTrendlineClick(param);
+      } else {
+        this.selectTrendlineAt(param);
+      }
+    });
+    this.priceChart.subscribeCrosshairMove((param) => this.handleTrendlinePreview(param));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && this.isTrendlineDrawing) this.setTrendlineDrawing(false);
+    });
+  }
+
   klineUrl() {
     return klineUrlFor(this.config.apiTf, this.config.limit);
   }
@@ -1361,6 +1664,10 @@ class SingleChartPanel {
     this.syncHeader();
     this.closeEl.textContent = "--";
     this.rsiEl.textContent = "RSI --";
+    updateMetricValue(this.emaEl, null, "E ");
+    updateMetricValue(this.wmaEl, null, "W ");
+    updateCountdownNode(this.countdownEl, this.config);
+    updateCountdownNode(this.chartCountdownEl, this.config);
 
     const response = await fetch(this.klineUrl());
     if (!response.ok) throw new Error(`${this.config.label} single HTTP ${response.status}`);
@@ -1423,8 +1730,12 @@ class SingleChartPanel {
 
     const last = candles[candles.length - 1];
     const lastRsi = rsiData.length ? rsiData[rsiData.length - 1].value : null;
+    const lastEma = rsiEmaData.length ? rsiEmaData[rsiEmaData.length - 1].value : null;
+    const lastWma = rsiWmaData.length ? rsiWmaData[rsiWmaData.length - 1].value : null;
     this.closeEl.textContent = `Close ${fmt.format(last.close)}`;
     this.rsiEl.textContent = lastRsi === null ? "RSI --" : `RSI ${fmt.format(lastRsi)}`;
+    updateMetricValue(this.emaEl, lastEma, "E ");
+    updateMetricValue(this.wmaEl, lastWma, "W ");
     this.rsiEl.classList.toggle("rsi-low", lastRsi !== null && lastRsi <= RSI_LOW_LEVEL);
     this.rsiEl.classList.toggle("rsi-high", lastRsi !== null && lastRsi >= RSI_HIGH_LEVEL);
 
@@ -1480,7 +1791,7 @@ function updateSymbolTitle() {
   $("symbolInput").value = currentSymbol;
   const base = currentSymbol.replace("USDT", "");
   $("symbolTitle").textContent = `${base} / TetherUS`;
-  document.title = `${base} Matrix`;
+  document.title = currentSymbol;
 }
 
 function startTickerWebSocket(session) {
@@ -1491,7 +1802,8 @@ function startTickerWebSocket(session) {
     if (session !== sessionId) return;
     const ticker = JSON.parse(event.data);
     const price = Number(ticker.c);
-    document.title = `${fmt.format(price)} | ${$("symbolTitle").textContent}`;
+    const base = currentSymbol.replace("USDT", "");
+    document.title = `${base} ${fmt.format(price)}`;
   };
 
   tickerWs.onclose = () => {
@@ -1584,6 +1896,15 @@ function redrawAll() {
   singlePanel?.draw(false);
 }
 
+function updateAllCountdowns() {
+  panels.forEach((panel) => updateCountdownNode(panel.countdownEl, panel.config));
+  rsiOnlyPanels.forEach((panel) => updateCountdownNode(panel.countdownEl, panel.config));
+  if (singlePanel) {
+    updateCountdownNode(singlePanel.countdownEl, singlePanel.config);
+    updateCountdownNode(singlePanel.chartCountdownEl, singlePanel.config);
+  }
+}
+
 function setActiveView(view, persist = true) {
   const nextView = ["chart", "single", "rsi"].includes(view) ? view : "chart";
   document.body.classList.toggle("rsi-view-active", nextView === "rsi");
@@ -1602,6 +1923,7 @@ function startClock() {
   setInterval(() => {
     const nowUtcSeconds = Math.floor(Date.now() / 1000);
     $("clock").textContent = `UTC+7 ${formatChartTime(nowUtcSeconds).split(" ")[1]}`;
+    updateAllCountdowns();
   }, 1000);
 }
 
@@ -1652,6 +1974,7 @@ function boot() {
   });
 
   startClock();
+  updateAllCountdowns();
   resizeAll();
   setActiveView(initialView(), false);
   loadMarketMatrix();

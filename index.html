@@ -3,20 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="XTB-Springtea market matrix realtime: H4, H12, D1, D2 price and RSI from Binance." />
-  <meta name="theme-color" content="#131722" />
-  <title>XTB-Springtea | Market Matrix</title>
+  <meta name="description" content="Thành Đạt - Hành trình trade để tự do tài chính: BTC market structure, RSI morphology, and multi-timeframe swing decisions." />
+  <meta name="theme-color" content="#09110f" />
+  <title>BTCUSDT</title>
   <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   <link rel="stylesheet" href="assets/css/styles.css" />
-  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="assets/icons/favicon.svg?v=td-minimal-20260717" />
   <link rel="manifest" href="site.webmanifest" />
 </head>
 <body>
   <div class="market-app">
     <header class="market-topbar">
-      <div class="brand">
-        <span class="coin-dot">B</span>
-        <span>XTB-SPRINGTEA</span>
+      <div class="brand" aria-label="Thành Đạt - Hành trình trade để tự do tài chính">
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-mark__st">TĐ</span>
+        </span>
+        <span class="brand-word">
+          <span class="brand-name">THÀNH ĐẠT</span>
+          <span class="brand-kicker">TRADE TO FREEDOM</span>
+        </span>
       </div>
 
       <form id="symbolForm" class="symbol-form">
@@ -97,6 +102,8 @@
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
               <span>RSI <b data-role="rsi">--</b></span>
+              <span>E <b data-role="rsi-ema">--</b></span>
+              <span>W <b data-role="rsi-wma">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
@@ -112,6 +119,8 @@
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
               <span>RSI <b data-role="rsi">--</b></span>
+              <span>E <b data-role="rsi-ema">--</b></span>
+              <span>W <b data-role="rsi-wma">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
@@ -127,6 +136,8 @@
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
               <span>RSI <b data-role="rsi">--</b></span>
+              <span>E <b data-role="rsi-ema">--</b></span>
+              <span>W <b data-role="rsi-wma">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
@@ -142,6 +153,8 @@
             <div class="frame-metrics">
               <span>Close <b data-role="close">--</b></span>
               <span>RSI <b data-role="rsi">--</b></span>
+              <span>E <b data-role="rsi-ema">--</b></span>
+              <span>W <b data-role="rsi-wma">--</b></span>
             </div>
           </header>
           <div class="price-chart" data-role="price-chart"></div>
@@ -158,6 +171,8 @@
             </div>
             <div class="frame-metrics">
               <span>RSI <b data-role="rsi-only-value">--</b></span>
+              <span>E <b data-role="rsi-only-ema">--</b></span>
+              <span>W <b data-role="rsi-only-wma">--</b></span>
             </div>
           </header>
           <div class="rsi-only-chart" data-role="rsi-only-chart"></div>
@@ -171,6 +186,8 @@
             </div>
             <div class="frame-metrics">
               <span>RSI <b data-role="rsi-only-value">--</b></span>
+              <span>E <b data-role="rsi-only-ema">--</b></span>
+              <span>W <b data-role="rsi-only-wma">--</b></span>
             </div>
           </header>
           <div class="rsi-only-chart" data-role="rsi-only-chart"></div>
@@ -184,6 +201,8 @@
             </div>
             <div class="frame-metrics">
               <span>RSI <b data-role="rsi-only-value">--</b></span>
+              <span>E <b data-role="rsi-only-ema">--</b></span>
+              <span>W <b data-role="rsi-only-wma">--</b></span>
             </div>
           </header>
           <div class="rsi-only-chart" data-role="rsi-only-chart"></div>
@@ -197,6 +216,8 @@
             </div>
             <div class="frame-metrics">
               <span>RSI <b data-role="rsi-only-value">--</b></span>
+              <span>E <b data-role="rsi-only-ema">--</b></span>
+              <span>W <b data-role="rsi-only-wma">--</b></span>
             </div>
           </header>
           <div class="rsi-only-chart" data-role="rsi-only-chart"></div>
@@ -211,8 +232,18 @@
               <span data-role="single-frame">H4</span>
               <span data-role="single-close">--</span>
               <span data-role="single-rsi">RSI --</span>
+              <span data-role="single-ema">E --</span>
+              <span data-role="single-wma">W --</span>
             </div>
-            <nav id="singleTimeframes" class="single-timeframes" aria-label="Single chart timeframe"></nav>
+            <div class="single-head-actions">
+              <nav id="singleTimeframes" class="single-timeframes" aria-label="Single chart timeframe"></nav>
+              <div class="single-drawing-tools" aria-label="Drawing tools">
+                <button class="draw-tool" type="button" data-role="trendline-tool" title="Draw trendline">Trend</button>
+                <button class="draw-tool" type="button" data-role="trendline-delete" title="Delete selected trendline">Delete</button>
+                <button class="draw-tool" type="button" data-role="trendline-undo" title="Undo last trendline">Undo</button>
+                <button class="draw-tool" type="button" data-role="trendline-clear" title="Clear trendlines">Clear</button>
+              </div>
+            </div>
           </header>
           <div class="single-price-chart" data-role="single-price-chart"></div>
           <button class="single-rsi-resizer" type="button" data-role="single-rsi-resizer" aria-label="Adjust RSI height"></button>
@@ -222,6 +253,6 @@
     </div>
   </div>
 
-  <script src="assets/js/app.js?v=20260716-rsi-p2-p3-markers"></script>
+  <script src="assets/js/app.js?v=20260717-trendline-preview-fix"></script>
 </body>
 </html>

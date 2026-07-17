@@ -1,10 +1,10 @@
 {
-  "name": "XTB-Springtea",
-  "short_name": "XTB-Springtea",
+  "name": "Thành Đạt - Hành trình trade để tự do tài chính",
+  "short_name": "Thành Đạt",
   "start_url": "./index.html?view=rsi",
   "display": "standalone",
-  "background_color": "#131722",
-  "theme_color": "#131722",
+  "background_color": "#09110f",
+  "theme_color": "#09110f",
   "icons": [
     {
       "src": "assets/icons/favicon.svg",

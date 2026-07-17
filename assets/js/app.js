@@ -1,5 +1,6 @@
 import { aggregateCandles, aggregateDailyCandles, toChartCandle } from "../../src/engine/market-data.js";
 import { anchoredVwap, crossSignals, emaFromClose, emaFromValues, jmaFromClose, rsi, wmaFromClose, wmaFromValues } from "../../src/engine/indicators.js";
+import { PINE_RULES, RSI_LEVELS, SEMANTIC } from "../../src/engine/rsi-form-config.js";
 
 const API = "https://api.binance.com";
 const WS_BASE = "wss://stream.binance.com:9443/ws";
@@ -8,10 +9,7 @@ const VISIBLE_BARS = 40;
 const RSI_LENGTH = 14;
 const RSI_EMA_LENGTH = 9;
 const RSI_WMA_LENGTH = 45;
-const RSI_LOW_LEVEL = 20;
-const RSI_HIGH_LEVEL = 80;
-const RSI_LOW_COLOR = "#8b0000";
-const RSI_HIGH_COLOR = "#ff2bd6";
+const { low: RSI_LOW_LEVEL, high: RSI_HIGH_LEVEL, lowColor: RSI_LOW_COLOR, highColor: RSI_HIGH_COLOR } = RSI_LEVELS;
 const TV_BG = "#131722";
 const TV_BG_DARK = "#10141f";
 const TV_BORDER = "#2a2e39";
@@ -30,36 +28,6 @@ const SINGLE_RSI_DEFAULT_HEIGHT = 170;
 const SINGLE_RSI_MIN_HEIGHT = 90;
 const SINGLE_RSI_MAX_RATIO = 0.72;
 const SINGLE_TRENDLINES_KEY = "singleChartTrendlinesV1";
-const SEMANTIC = {
-  INIT: 0,
-  NEUTRAL_REARM: 1,
-  BUY_I: 10,
-  BUY_II: 11,
-  BUY_1: 12,
-  BUY_2: 13,
-  BUY_3: 14,
-  BUY_STALE: 15,
-  BUY_TRAP_WAIT: 16,
-  SELL_I: 20,
-  SELL_II: 21,
-  SELL_1: 22,
-  SELL_2: 23,
-  SELL_3: 24,
-  SELL_STALE: 25,
-  SELL_TRAP_WAIT: 26
-};
-const PINE_RULES = {
-  noiseLookback: 7,
-  noiseCrossCount: 3,
-  iiTo3WindowBars: 2,
-  stateFreshBars: 1,
-  staleStateBars: 5,
-  trapHighLevel: 80,
-  trapLowLevel: 20,
-  allowDirectITriggers: false,
-  requireStrictFormSequence: false,
-  filterPointsByEmaWmaTrend: false
-};
 
 const FRAMES = [
   { key: "h4", label: "4h", apiTf: "4h", wsTf: "4h", aggregate: 1, limit: 360 },
@@ -1891,4 +1859,4 @@ function boot() {
   loadMarketMatrix();
 }
 
-export { boot };
+export { boot, pineRsiFrameState, rsiRegimeData, rsiSignalMarkers };

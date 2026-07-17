@@ -89,6 +89,7 @@ const layerState = {
   baseline: true,
   slowBaseline: true,
   vwap: true,
+  vwapMonth: true,
   rsi: true,
   rsiEma: true,
   rsiWma: true
@@ -927,6 +928,13 @@ class MarketPanel {
       lastValueVisible: true,
       priceLineVisible: false
     });
+    this.vwapMonthSeries = this.priceChart.addLineSeries({
+      color: "rgba(45,212,191,0.9)",
+      lineWidth: 2,
+      title: "",
+      lastValueVisible: true,
+      priceLineVisible: false
+    });
     this.rsiSeries = this.rsiChart.addLineSeries(rsiLineOptions({
       color: "#f0f3fa",
       lineWidth: 2
@@ -1030,6 +1038,7 @@ class MarketPanel {
       const baseline = jmaFromClose(candles, 70, 2, 5);
       const slowBaseline = jmaFromClose(candles, 150, 2, 0);
       const vwapData = anchoredVwap(candles, "W");
+      const vwapMonthData = anchoredVwap(candles, "M");
       const barColors = crossSignals(candles, baseline, slowBaseline);
 
       this.candleSeries.setData(candles.map((c) => {
@@ -1049,6 +1058,7 @@ class MarketPanel {
       this.baselineSeries.setData(layerState.baseline ? baseline : []);
       this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
       this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+      this.vwapMonthSeries.setData(layerState.vwapMonth ? vwapMonthData : []);
       this.hasRenderedPrice = true;
     }
 
@@ -1329,6 +1339,13 @@ class SingleChartPanel {
     });
     this.vwapSeries = this.priceChart.addLineSeries({
       color: "rgba(240,243,250,0.78)",
+      lineWidth: 1,
+      title: "",
+      lastValueVisible: true,
+      priceLineVisible: false
+    });
+    this.vwapMonthSeries = this.priceChart.addLineSeries({
+      color: "rgba(45,212,191,0.82)",
       lineWidth: 1,
       title: "",
       lastValueVisible: true,
@@ -1777,6 +1794,7 @@ class SingleChartPanel {
     const baseline = jmaFromClose(candles, 70, 2, 5);
     const slowBaseline = jmaFromClose(candles, 150, 2, 0);
     const vwapData = anchoredVwap(candles, "W");
+    const vwapMonthData = anchoredVwap(candles, "M");
     const barColors = crossSignals(candles, baseline, slowBaseline);
 
     this.candleSeries.setData(candles.map((c) => {
@@ -1801,6 +1819,7 @@ class SingleChartPanel {
     this.baselineSeries.setData(layerState.baseline ? baseline : []);
     this.slowBaselineSeries.setData(layerState.slowBaseline ? slowBaseline : []);
     this.vwapSeries.setData(layerState.vwap ? vwapData : []);
+    this.vwapMonthSeries.setData(layerState.vwapMonth ? vwapMonthData : []);
 
     const rsiData = rsi(candles, RSI_LENGTH);
     const rsiEmaData = emaFromValues(rsiData, RSI_EMA_LENGTH);

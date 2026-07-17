@@ -246,6 +246,7 @@ body {
 .swatch.yellow { background: var(--yellow); }
 .swatch.purple { background: var(--purple); }
 .swatch.white { background: var(--white); }
+.swatch.cyan { background: #2dd4bf; }
 .swatch.orange { background: var(--orange); }
 .swatch.red { background: var(--red); }
 .swatch.green { background: var(--green); }

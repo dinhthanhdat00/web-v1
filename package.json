@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node --check assets/js/app.js"
+    "check": "node --check assets/js/app.js",
+    "test:engine": "node scripts/test-rsi-form-engine.mjs"
   },
   "repository": {
     "type": "git",

@@ -1,56 +1,56 @@
-THANH DAT TRADING DASHBOARD
+THÀNH ĐẠT TRADING DASHBOARD
 
-Cong cu web tinh de theo doi BTC swing trading theo da khung thoi gian, tap trung vao price action va bo chi bao RSI14 + EMA9 + WMA45.
+Dashboard web tĩnh hỗ trợ phân tích BTC theo phong cách swing trading đa khung thời gian, tập trung vào price action và bộ chỉ báo RSI14 + EMA9 + WMA45.
 
-Muc tieu:
-- Tao mot dashboard gon, nhanh, de nhin.
-- Phuc vu viec lap ke hoach giao dich BTC theo H4/H12.
-- Tap trung vao BTC, khong lan man sang nhieu cap giao dich.
+Mục tiêu:
+- Tạo một không gian phân tích gọn, nhanh, dễ nhìn.
+- Hỗ trợ lập kế hoạch giao dịch BTC trên các khung H4/H12.
+- Tập trung vào BTC, không lan man sang nhiều cặp giao dịch khác.
 
-Tinh nang chinh:
-- Chart realtime BTCUSDT lay du lieu tu Binance.
-- Chart: xem nhanh H4, H12, D1, D2 theo chart gia.
-- Single: mot chart lon co the doi timeframe H1, H4, H12, D1, D2, D3, W.
-- RSI Only: so sanh RSI14 + EMA9 + WMA45 tren nhieu khung.
-- Baseline nhanh/cham tren chart gia.
-- VWAP tuan va VWAP thang.
+Tính năng chính:
+- Theo dõi realtime BTCUSDT bằng dữ liệu từ Binance.
+- Chart: xem nhanh H4, H12, D1, D2 theo chart giá.
+- Single: một chart lớn có thể đổi timeframe H1, H4, H12, D1, D2, D3, W.
+- RSI Only: so sánh RSI14 + EMA9 + WMA45 trên nhiều khung thời gian.
+- Baseline nhanh/chậm trên chart giá.
+- VWAP tuần và VWAP tháng.
 - Volume.
 - Marker P2/P3 theo logic RSI.
-- Nen nen xanh/do theo regime RSI.
-- Countdown den luc dong nen.
-- Dieu chinh chieu cao khung RSI trong Single.
-- Ve trendline tren Single chart.
-- Crosshair dong bo giua chart gia va RSI.
-- Toi uu performance: chi render tab dang xem, giam redraw WebSocket, debounce resize.
+- Nền xanh/đỏ theo regime RSI.
+- Countdown thời gian đóng nến.
+- Điều chỉnh chiều cao khung RSI trong Single.
+- Vẽ trendline trong Single chart.
+- Crosshair đồng bộ giữa chart giá và RSI.
+- Tối ưu hiệu năng: chỉ render tab đang xem, giảm redraw WebSocket, debounce resize.
 
-Cach dung nhanh:
-1. Mo trang web.
-2. Nhap symbol, mac dinh la BTCUSDT.
-3. Chon Chart, Single hoac RSI Only.
-4. Trong Controls, bat/tat cac layer can xem.
-5. Trong Single, co the ve trendline va dieu chinh chieu cao RSI.
+Cách sử dụng nhanh:
+1. Mở trang web.
+2. Nhập symbol, mặc định là BTCUSDT.
+3. Chọn Chart, Single hoặc RSI Only.
+4. Trong Controls, bật/tắt các layer cần xem.
+5. Trong Single, có thể vẽ trendline và điều chỉnh chiều cao RSI.
 
-Khung thoi gian ho tro:
+Khung thời gian hỗ trợ:
 - Single: H1, H4, H12, D1, D2, D3, W.
-- Chart va RSI Only: H4, H12, D1, D2.
+- Chart và RSI Only: H4, H12, D1, D2.
 
-Cach chay local:
-Neu mo truc tiep index.html bi chan ket noi API, chay:
+Chạy local:
+Nếu mở trực tiếp index.html bị trình duyệt chặn kết nối API, hãy chạy:
 
 python start_server.py
 
-Sau do mo:
+Sau đó mở:
 
 http://localhost:8000
 
-Hoac chay:
+Hoặc chạy:
 
 start_server.bat
 
-Luu y:
-- Day la cong cu ho tro phan tich, khong phai loi khuyen tai chinh.
-- Du lieu lay tu Binance, co the cham hoac loi tam thoi tuy ket noi.
-- Phuong phap giao dich, file ghi chu rieng va cac reference ca nhan khong nam trong repo nay.
+Lưu ý:
+- Đây là công cụ hỗ trợ phân tích, không phải lời khuyên tài chính.
+- Dữ liệu lấy từ Binance và có thể bị chậm hoặc lỗi tạm thời tùy kết nối.
+- Phương pháp giao dịch, ghi chú riêng và các reference cá nhân không nằm trong repository này.
 
-Thuong hieu:
-Thanh Dat - hanh trinh trade de tu do tai chinh.
+Thương hiệu:
+Thành Đạt - Hành trình trade để tự do tài chính.

@@ -1,4 +1,4 @@
-import { aggregateCandles, aggregateDailyCandles, toChartCandle } from "../../src/engine/market-data.js";
+import { aggregateCandles, aggregateDailyCandles, BinanceStream, fetchCandles, klineUrl, toChartCandle } from "../../src/engine/market-data.js";
 import { anchoredVwap, crossSignals, emaFromClose, emaFromValues, jmaFromClose, rsi, wmaFromClose, wmaFromValues } from "../../src/engine/indicators.js";
 import { PINE_RULES, RSI_LEVELS, SEMANTIC } from "../../src/engine/rsi-form-config.js";
 import { pineRsiFrameState, rsiColorData, rsiExtremeLineData, rsiRegimeData, rsiSignalMarkers } from "../../src/engine/rsi-forms.js";
@@ -231,24 +231,12 @@ function rsiLineOptions(options = {}) {
 }
 
 function klineUrlFor(interval, limit = 500) {
-  return `${API}/api/v3/klines?symbol=${currentSymbol}&interval=${interval}&limit=${limit}`;
+  return klineUrl(currentSymbol, interval, limit, API);
 }
 
 async function loadSharedD2State() {
-  const response = await fetch(klineUrlFor("1d", 1000));
-  if (!response.ok) throw new Error(`D2 background HTTP ${response.status}`);
-
-  const raw = await response.json();
-  return pineRsiFrameState(aggregateDailyCandles(raw.map(toChartCandle), 2));
-}
-
-function closeSocket(ws) {
-  if (!ws) return;
-  ws.onopen = null;
-  ws.onmessage = null;
-  ws.onerror = null;
-  ws.onclose = null;
-  try { ws.close(); } catch (err) {}
+  const candles = await fetchCandles(currentSymbol, "1d", 1000, API);
+  return pineRsiFrameState(aggregateDailyCandles(candles, 2));
 }
 
 function setLiveStatus(isOnline, text) {
@@ -293,7 +281,7 @@ class MarketPanel {
     this.el = document.querySelector(`[data-frame="${config.key}"]`);
     this.rawCandles = [];
     this.candles = [];
-    this.ws = null;
+    this.stream = null;
     this.drawFrame = null;
     this.lastPriceSize = { width: 0, height: 0 };
     this.lastRsiSize = { width: 0, height: 0 };
@@ -423,20 +411,17 @@ class MarketPanel {
   }
 
   async load(session) {
-    closeSocket(this.ws);
+    this.stream?.close();
     this.closeEl.textContent = "--";
     updateRsiValue(this.rsiEl, null);
     updateMetricValue(this.rsiEmaEl, null);
     updateMetricValue(this.rsiWmaEl, null);
     updateCountdownNode(this.countdownEl, this.config);
 
-    const response = await fetch(this.klineUrl());
-    if (!response.ok) throw new Error(`${this.config.label} HTTP ${response.status}`);
-
-    const raw = await response.json();
+    const rawCandles = await fetchCandles(currentSymbol, this.config.apiTf, this.config.limit, API);
     if (session !== sessionId) return;
 
-    this.rawCandles = raw.map(toChartCandle);
+    this.rawCandles = rawCandles;
     this.refreshCandles();
     this.hasRenderedPrice = false;
     this.draw(true);
@@ -504,27 +489,12 @@ class MarketPanel {
 
   startWebSocket(session) {
     const stream = `${currentSymbol.toLowerCase()}@kline_${this.config.wsTf}`;
-    this.ws = new WebSocket(`${WS_BASE}/${stream}`);
-
-    this.ws.onopen = () => {
-      if (session === sessionId) setLiveStatus(true, `Live ${currentSymbol}`);
-    };
-
-    this.ws.onclose = () => {
+    this.stream?.close();
+    this.stream = new BinanceStream(stream, { wsBase: WS_BASE, onStatus: (status) => {
       if (session !== sessionId) return;
-      setLiveStatus(false, "Reconnecting...");
-      setTimeout(() => {
-        if (session === sessionId) this.startWebSocket(session);
-      }, 1500);
-    };
-
-    this.ws.onerror = () => {
-      if (session !== sessionId) return;
-      setLiveStatus(false, "WebSocket error");
-      try { this.ws.close(); } catch (err) {}
-    };
-
-    this.ws.onmessage = (event) => {
+      if (status === "live") setLiveStatus(true, `Live ${currentSymbol}`);
+      if (status === "reconnecting") setLiveStatus(false, "Reconnecting...");
+    }, onMessage: (event) => {
       if (session !== sessionId) return;
 
       const msg = JSON.parse(event.data);
@@ -548,7 +518,8 @@ class MarketPanel {
 
       this.refreshCandles();
       this.scheduleDraw(false);
-    };
+    }});
+    this.stream.connect();
   }
 }
 
@@ -671,7 +642,7 @@ class SingleChartPanel {
     this.config = configs.find((item) => item.key === "h4") || configs[0];
     this.rawCandles = [];
     this.candles = [];
-    this.ws = null;
+    this.stream = null;
     this.drawFrame = null;
     this.lastPriceSize = { width: 0, height: 0 };
     this.lastRsiSize = { width: 0, height: 0 };
@@ -1207,7 +1178,7 @@ class SingleChartPanel {
   }
 
   async load(session, fit = true) {
-    closeSocket(this.ws);
+    this.stream?.close();
     this.syncHeader();
     this.closeEl.textContent = "--";
     this.rsiEl.textContent = "RSI --";
@@ -1216,13 +1187,10 @@ class SingleChartPanel {
     updateCountdownNode(this.countdownEl, this.config);
     updateCountdownNode(this.chartCountdownEl, this.config);
 
-    const response = await fetch(this.klineUrl());
-    if (!response.ok) throw new Error(`${this.config.label} single HTTP ${response.status}`);
-
-    const raw = await response.json();
+    const rawCandles = await fetchCandles(currentSymbol, this.config.apiTf, this.config.limit, API);
     if (session !== sessionId) return;
 
-    this.rawCandles = raw.map(toChartCandle);
+    this.rawCandles = rawCandles;
     this.refreshCandles();
     this.hasRendered = false;
     if (activeViewKey === "single") this.draw(fit);
@@ -1297,9 +1265,8 @@ class SingleChartPanel {
 
   startWebSocket(session) {
     const stream = `${currentSymbol.toLowerCase()}@kline_${this.config.wsTf}`;
-    this.ws = new WebSocket(`${WS_BASE}/${stream}`);
-
-    this.ws.onmessage = (event) => {
+    this.stream?.close();
+    this.stream = new BinanceStream(stream, { wsBase: WS_BASE, onMessage: (event) => {
       if (session !== sessionId) return;
 
       const msg = JSON.parse(event.data);
@@ -1323,14 +1290,8 @@ class SingleChartPanel {
 
       this.refreshCandles();
       if (activeViewKey === "single") this.scheduleDraw(false);
-    };
-
-    this.ws.onclose = () => {
-      if (session !== sessionId) return;
-      setTimeout(() => {
-        if (session === sessionId) this.startWebSocket(session);
-      }, 1500);
-    };
+    }});
+    this.stream.connect();
   }
 }
 
@@ -1348,30 +1309,26 @@ function updateSymbolTitle() {
 }
 
 function startTickerWebSocket(session) {
-  closeSocket(tickerWs);
-  tickerWs = new WebSocket(`${WS_BASE}/${currentSymbol.toLowerCase()}@miniTicker`);
-
-  tickerWs.onmessage = (event) => {
+  tickerWs?.close();
+  tickerWs = new BinanceStream(`${currentSymbol.toLowerCase()}@miniTicker`, {
+    wsBase: WS_BASE,
+    onMessage: (event) => {
     if (session !== sessionId) return;
     const ticker = JSON.parse(event.data);
     const price = Number(ticker.c);
     const base = currentSymbol.replace("USDT", "");
     document.title = `${base} ${fmt.format(price)}`;
-  };
-
-  tickerWs.onclose = () => {
-    if (session !== sessionId) return;
-    setTimeout(() => {
-      if (session === sessionId) startTickerWebSocket(session);
-    }, 1500);
-  };
+    },
+    onStatus: (status) => { if (session === sessionId && status === "reconnecting") setLiveStatus(false, "Reconnecting..."); }
+  });
+  tickerWs.connect();
 }
 
 async function loadMarketMatrix() {
   const session = ++sessionId;
-  closeSocket(tickerWs);
-  panels.forEach((panel) => closeSocket(panel.ws));
-  closeSocket(singlePanel?.ws);
+  tickerWs?.close();
+  panels.forEach((panel) => panel.stream?.close());
+  singlePanel?.stream?.close();
 
   updateSymbolTitle();
   updateOhlc(null);

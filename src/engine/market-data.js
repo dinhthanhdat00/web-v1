@@ -9,6 +9,68 @@ export function toChartCandle(kline) {
   };
 }
 
+export function klineUrl(symbol, interval, limit = 500, apiBase = "https://api.binance.com") {
+  return `${apiBase}/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`;
+}
+
+export async function fetchCandles(symbol, interval, limit = 500, apiBase) {
+  const response = await fetch(klineUrl(symbol, interval, limit, apiBase));
+  if (!response.ok) throw new Error(`${interval} HTTP ${response.status}`);
+  return (await response.json()).map(toChartCandle);
+}
+
+export function closeStream(socket) {
+  if (!socket) return;
+  socket.onopen = null;
+  socket.onmessage = null;
+  socket.onerror = null;
+  socket.onclose = null;
+  try { socket.close(); } catch {}
+}
+
+export function openBinanceStream(stream, wsBase = "wss://stream.binance.com:9443/ws") {
+  return new WebSocket(`${wsBase}/${stream}`);
+}
+
+export class BinanceStream {
+  constructor(stream, { wsBase, onMessage, onStatus } = {}) {
+    this.stream = stream;
+    this.wsBase = wsBase;
+    this.onMessage = onMessage;
+    this.onStatus = onStatus;
+    this.socket = null;
+    this.retry = 0;
+    this.retryTimer = null;
+    this.closed = false;
+  }
+
+  connect() {
+    this.closed = false;
+    this.onStatus?.("connecting");
+    this.socket = openBinanceStream(this.stream, this.wsBase);
+    this.socket.onopen = () => { this.retry = 0; this.onStatus?.("live"); };
+    this.socket.onmessage = (event) => this.onMessage?.(event);
+    this.socket.onclose = () => this.scheduleReconnect();
+    this.socket.onerror = () => this.socket?.close();
+  }
+
+  scheduleReconnect() {
+    if (this.closed) return;
+    this.onStatus?.("reconnecting");
+    const delay = Math.min(1000 * 2 ** this.retry, 15000);
+    this.retry += 1;
+    this.retryTimer = setTimeout(() => this.connect(), delay);
+  }
+
+  close() {
+    this.closed = true;
+    clearTimeout(this.retryTimer);
+    closeStream(this.socket);
+    this.socket = null;
+    this.onStatus?.("offline");
+  }
+}
+
 export function aggregateCandles(source, groupSize) {
   if (groupSize <= 1) return source.slice();
 
